@@ -31,7 +31,6 @@ public class HeroLineWarsGame extends JFrame {
     private static final int PANEL_WIDTH = 900;
     private static final int PANEL_HEIGHT = 440;
     private static final int HERO_WIDTH = 48;
-    private static final int HERO_HEIGHT = 90;
     private static final int BASE_WIDTH = 80;
     private static final int BASE_HEIGHT = 190;
     private static final int BASE_MARGIN = 32;
@@ -48,6 +47,8 @@ public class HeroLineWarsGame extends JFrame {
     private static final int INCOME_INTERVAL_TICKS = 120;
     private static final int WAVE_INTERVAL_TICKS = 240;
     private static final double UNIT_SPEED = 2.6;
+    private static final int HERO_VERTICAL_MARGIN = 14;
+    private static final int UNIT_VERTICAL_MARGIN = 8;
     private static final int UNIT_SIZE = 28;
     private static final int UNIT_ATTACK_COOLDOWN_TICKS = 24;
     private static final int UNIT_BASE_ATTACK_COOLDOWN_TICKS = 30;
@@ -85,8 +86,12 @@ public class HeroLineWarsGame extends JFrame {
 
     private double heroX;
     private double heroTargetX;
+    private double heroY;
+    private double heroTargetY;
     private double enemyX;
     private double enemyTargetX;
+    private double enemyY;
+    private double enemyTargetY;
     private boolean heroAlive;
     private boolean enemyAlive;
     private int heroAttackCooldown;
@@ -392,8 +397,12 @@ public class HeroLineWarsGame extends JFrame {
 
         heroX = getPlayerSpawnX();
         heroTargetX = heroX;
+        heroY = getPlayerSpawnY();
+        heroTargetY = heroY;
         enemyX = getEnemySpawnX();
         enemyTargetX = enemyX;
+        enemyY = getEnemySpawnY();
+        enemyTargetY = enemyY;
 
         updateQueueLabel();
         updateInventoryLabel();
@@ -441,11 +450,14 @@ public class HeroLineWarsGame extends JFrame {
             waveCountdown = WAVE_INTERVAL_TICKS;
         }
 
-        heroTargetX = clampMovementTarget(heroTargetX);
-        enemyTargetX = clampMovementTarget(enemyTargetX);
+        heroTargetX = clampHorizontalTarget(heroTargetX);
+        heroTargetY = clampHeroVerticalTarget(heroTargetY);
+        enemyTargetX = clampHorizontalTarget(enemyTargetX);
+        enemyTargetY = clampEnemyVerticalTarget(enemyTargetY);
 
         if (heroAlive) {
             heroX = approach(heroX, heroTargetX, HERO_SPEED);
+            heroY = approach(heroY, heroTargetY, HERO_SPEED);
         } else {
             if (heroRespawnTimer > 0) {
                 heroRespawnTimer--;
@@ -455,18 +467,23 @@ public class HeroLineWarsGame extends JFrame {
                 playerHero.resetHealth();
                 heroX = getPlayerSpawnX();
                 heroTargetX = heroX;
+                heroY = getPlayerSpawnY();
+                heroTargetY = heroY;
             }
         }
 
         if (enemyAlive) {
-            UnitInstance threat = findNearestUnit(playerUnits, enemyX + HERO_WIDTH / 2.0);
+            UnitInstance threat = findNearestUnit(playerUnits, enemyX + HERO_WIDTH / 2.0, enemyY + HERO_WIDTH / 2.0);
             if (threat != null) {
                 double desired = threat.getCenterX() - HERO_WIDTH / 2.0 - 18;
-                enemyTargetX = clampMovementTarget(desired);
+                enemyTargetX = clampHorizontalTarget(desired);
+                enemyTargetY = clampEnemyVerticalTarget(threat.getCenterY() - HERO_WIDTH / 2.0);
             } else {
-                enemyTargetX = clampMovementTarget(getEnemyBaseX() - HERO_WIDTH - 20);
+                enemyTargetX = clampHorizontalTarget(getEnemyBaseX() - HERO_WIDTH - 20);
+                enemyTargetY = clampEnemyVerticalTarget(getEnemyLaneCenterY() - HERO_WIDTH / 2.0);
             }
             enemyX = approach(enemyX, enemyTargetX, ENEMY_SPEED);
+            enemyY = approach(enemyY, enemyTargetY, ENEMY_SPEED);
         } else {
             if (enemyRespawnTimer > 0) {
                 enemyRespawnTimer--;
@@ -476,6 +493,8 @@ public class HeroLineWarsGame extends JFrame {
                 aiHero.resetHealth();
                 enemyX = getEnemySpawnX();
                 enemyTargetX = enemyX;
+                enemyY = getEnemySpawnY();
+                enemyTargetY = enemyY;
             }
         }
 
@@ -505,9 +524,11 @@ public class HeroLineWarsGame extends JFrame {
         if (!heroAlive || !enemyAlive) {
             return;
         }
-        double heroCenter = heroX + HERO_WIDTH / 2.0;
-        double enemyCenter = enemyX + HERO_WIDTH / 2.0;
-        double distance = Math.abs(heroCenter - enemyCenter);
+        double heroCenterX = heroX + HERO_WIDTH / 2.0;
+        double heroCenterY = heroY + HERO_WIDTH / 2.0;
+        double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
+        double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
+        double distance = distance(heroCenterX, heroCenterY, enemyCenterX, enemyCenterY);
         if (distance > ATTACK_RANGE) {
             return;
         }
@@ -530,15 +551,24 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private void handleBasePressure() {
+        double heroCenterY = heroY + HERO_WIDTH / 2.0;
+        double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
+        int enemyBaseTop = getEnemyBaseTop();
+        int enemyBaseBottom = getEnemyBaseBottom();
+        int playerBaseTop = getPlayerBaseTop();
+        int playerBaseBottom = getPlayerBaseBottom();
+
         if (heroAlive && !enemyAlive) {
-            if (heroBaseAttackCooldown <= 0 && heroX + HERO_WIDTH >= getEnemyBaseX()) {
+            if (heroBaseAttackCooldown <= 0 && heroX + HERO_WIDTH >= getEnemyBaseX()
+                    && heroCenterY >= enemyBaseTop && heroCenterY <= enemyBaseBottom) {
                 enemyBaseHealth = Math.max(0, enemyBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, playerHero.getAttack() * 3));
                 heroBaseAttackCooldown = BASE_ATTACK_COOLDOWN_TICKS;
                 checkVictoryConditions();
             }
         }
         if (enemyAlive && !heroAlive) {
-            if (enemyBaseAttackCooldown <= 0 && enemyX <= getPlayerBaseX() + BASE_WIDTH) {
+            if (enemyBaseAttackCooldown <= 0 && enemyX <= getPlayerBaseX() + BASE_WIDTH
+                    && enemyCenterY >= playerBaseTop && enemyCenterY <= playerBaseBottom) {
                 playerBaseHealth = Math.max(0, playerBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, aiHero.getAttack() * 3));
                 enemyBaseAttackCooldown = BASE_ATTACK_COOLDOWN_TICKS;
                 checkVictoryConditions();
@@ -688,6 +718,14 @@ public class HeroLineWarsGame extends JFrame {
         return getMovementLeftLimit() + 40;
     }
 
+    private double getPlayerSpawnY() {
+        return getPlayerLaneCenterY() - HERO_WIDTH / 2.0;
+    }
+
+    private double getEnemySpawnY() {
+        return getEnemyLaneCenterY() - HERO_WIDTH / 2.0;
+    }
+
     private double getMovementLeftLimit() {
         return Math.max(0, BASE_MARGIN - HERO_WIDTH - 12);
     }
@@ -701,23 +739,118 @@ public class HeroLineWarsGame extends JFrame {
         return Math.max(getMovementLeftLimit(), limit);
     }
 
-    private double clampMovementTarget(double value) {
+    private int getLaneHeight() {
+        int height = battlefieldPanel.getHeight();
+        if (height <= 0) {
+            height = battlefieldPanel.getPreferredSize().height;
+        }
+        int available = height - 2 * LANE_MARGIN - LANE_GAP;
+        if (available < 200) {
+            available = 200;
+        }
+        return available / 2;
+    }
+
+    private int getPlayerLaneTop() {
+        return LANE_MARGIN;
+    }
+
+    private int getEnemyLaneTop() {
+        return getPlayerLaneTop() + getLaneHeight() + LANE_GAP;
+    }
+
+    private double getPlayerLaneCenterY() {
+        return getPlayerLaneTop() + getLaneHeight() / 2.0;
+    }
+
+    private double getEnemyLaneCenterY() {
+        return getEnemyLaneTop() + getLaneHeight() / 2.0;
+    }
+
+    private double getPlayerHeroTopLimit() {
+        return getPlayerLaneTop() + HERO_VERTICAL_MARGIN;
+    }
+
+    private double getPlayerHeroBottomLimit() {
+        return getPlayerLaneTop() + getLaneHeight() - HERO_WIDTH - HERO_VERTICAL_MARGIN;
+    }
+
+    private double getEnemyHeroTopLimit() {
+        return getEnemyLaneTop() + HERO_VERTICAL_MARGIN;
+    }
+
+    private double getEnemyHeroBottomLimit() {
+        return getEnemyLaneTop() + getLaneHeight() - HERO_WIDTH - HERO_VERTICAL_MARGIN;
+    }
+
+    private int getPlayerBaseTop() {
+        return getPlayerLaneTop() + 20;
+    }
+
+    private int getPlayerBaseBottom() {
+        return getPlayerBaseTop() + getLaneHeight() - 40;
+    }
+
+    private int getEnemyBaseTop() {
+        return getEnemyLaneTop() + 20;
+    }
+
+    private int getEnemyBaseBottom() {
+        return getEnemyBaseTop() + getLaneHeight() - 40;
+    }
+
+    private double getPlayerBaseCenterY() {
+        return getPlayerLaneTop() + getLaneHeight() / 2.0;
+    }
+
+    private double getEnemyBaseCenterY() {
+        return getEnemyLaneTop() + getLaneHeight() / 2.0;
+    }
+
+    private double clampHorizontalTarget(double value) {
         return clamp(value, getMovementLeftLimit(), getMovementRightLimit());
     }
 
-    private void updateHeroTargetFromMouse(int mouseX) {
-        if (!heroAlive || paused || gameOver) {
-            return;
+    private double clampHeroVerticalTarget(double value) {
+        double min = getPlayerHeroTopLimit();
+        double max = getPlayerHeroBottomLimit();
+        if (max < min) {
+            return min;
         }
-        double target = mouseX - HERO_WIDTH / 2.0;
-        heroTargetX = clampMovementTarget(target);
+        return clamp(value, min, max);
     }
 
-    private void adjustHeroTarget(double delta) {
+    private double clampEnemyVerticalTarget(double value) {
+        double min = getEnemyHeroTopLimit();
+        double max = getEnemyHeroBottomLimit();
+        if (max < min) {
+            return min;
+        }
+        return clamp(value, min, max);
+    }
+
+    private void updateHeroTargetFromMouse(int mouseX, int mouseY) {
         if (!heroAlive || paused || gameOver) {
             return;
         }
-        heroTargetX = clampMovementTarget(heroTargetX + delta);
+        double targetX = mouseX - HERO_WIDTH / 2.0;
+        double targetY = mouseY - HERO_WIDTH / 2.0;
+        heroTargetX = clampHorizontalTarget(targetX);
+        heroTargetY = clampHeroVerticalTarget(targetY);
+    }
+
+    private void adjustHeroTargetX(double delta) {
+        if (!heroAlive || paused || gameOver) {
+            return;
+        }
+        heroTargetX = clampHorizontalTarget(heroTargetX + delta);
+    }
+
+    private void adjustHeroTargetY(double delta) {
+        if (!heroAlive || paused || gameOver) {
+            return;
+        }
+        heroTargetY = clampHeroVerticalTarget(heroTargetY + delta);
     }
 
     private static double approach(double current, double target, double speed) {
@@ -735,6 +868,12 @@ public class HeroLineWarsGame extends JFrame {
             return max;
         }
         return value;
+    }
+
+    private static double distance(double x1, double y1, double x2, double y2) {
+        double dx = x1 - x2;
+        double dy = y1 - y2;
+        return Math.hypot(dx, dy);
     }
 
     private class BattlefieldPanel extends JPanel {
@@ -775,14 +914,14 @@ public class HeroLineWarsGame extends JFrame {
             if (!heroAlive || gameOver || paused) {
                 return;
             }
-            updateHeroTargetFromMouse(e.getX());
+            updateHeroTargetFromMouse(e.getX(), e.getY());
         }
 
         private void handleDrag(MouseEvent e) {
             if (!heroAlive || gameOver || paused) {
                 return;
             }
-            updateHeroTargetFromMouse(e.getX());
+            updateHeroTargetFromMouse(e.getX(), e.getY());
         }
 
         private void handleRelease() {
@@ -797,6 +936,10 @@ public class HeroLineWarsGame extends JFrame {
             javax.swing.KeyStroke leftArrow = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_LEFT, 0);
             javax.swing.KeyStroke right = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_D, 0);
             javax.swing.KeyStroke rightArrow = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_RIGHT, 0);
+            javax.swing.KeyStroke up = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_W, 0);
+            javax.swing.KeyStroke upArrow = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_UP, 0);
+            javax.swing.KeyStroke down = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_S, 0);
+            javax.swing.KeyStroke downArrow = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_DOWN, 0);
             javax.swing.KeyStroke pauseKey = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0);
             javax.swing.KeyStroke pauseKeyAlt = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_P, 0);
 
@@ -804,19 +947,35 @@ public class HeroLineWarsGame extends JFrame {
             inputMap.put(leftArrow, "moveLeft");
             inputMap.put(right, "moveRight");
             inputMap.put(rightArrow, "moveRight");
+            inputMap.put(up, "moveUp");
+            inputMap.put(upArrow, "moveUp");
+            inputMap.put(down, "moveDown");
+            inputMap.put(downArrow, "moveDown");
             inputMap.put(pauseKey, "pause");
             inputMap.put(pauseKeyAlt, "pause");
 
             actionMap.put("moveLeft", new javax.swing.AbstractAction() {
                 @Override
                 public void actionPerformed(java.awt.event.ActionEvent e) {
-                    adjustHeroTarget(-60);
+                    adjustHeroTargetX(-60);
                 }
             });
             actionMap.put("moveRight", new javax.swing.AbstractAction() {
                 @Override
                 public void actionPerformed(java.awt.event.ActionEvent e) {
-                    adjustHeroTarget(60);
+                    adjustHeroTargetX(60);
+                }
+            });
+            actionMap.put("moveUp", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    adjustHeroTargetY(-60);
+                }
+            });
+            actionMap.put("moveDown", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    adjustHeroTargetY(60);
                 }
             });
             actionMap.put("pause", new javax.swing.AbstractAction() {
@@ -837,9 +996,9 @@ public class HeroLineWarsGame extends JFrame {
             if (width <= 0) {
                 width = getPreferredSize().width;
             }
-            int laneHeight = calculateLaneHeight();
-            int playerLaneTop = LANE_MARGIN;
-            int enemyLaneTop = playerLaneTop + laneHeight + LANE_GAP;
+            int laneHeight = getLaneHeight();
+            int playerLaneTop = getPlayerLaneTop();
+            int enemyLaneTop = getEnemyLaneTop();
 
             drawLaneSurface(g2, width, playerLaneTop, laneHeight);
             drawLaneSurface(g2, width, enemyLaneTop, laneHeight);
@@ -847,31 +1006,33 @@ public class HeroLineWarsGame extends JFrame {
             drawBase(g2, getPlayerBaseX(), playerLaneTop, laneHeight, new Color(66, 135, 245));
             drawBase(g2, getEnemyBaseX(), playerLaneTop, laneHeight, new Color(200, 70, 70));
             for (UnitInstance unit : enemyUnits) {
-                drawUnit(g2, unit, playerLaneTop, laneHeight, new Color(214, 68, 68));
+                drawUnit(g2, unit, new Color(214, 68, 68));
             }
             if (heroAlive) {
                 int heroDrawX = (int) Math.round(heroX);
-                drawHeroRange(g2, heroDrawX + HERO_WIDTH / 2, playerLaneTop + laneHeight / 2,
+                int heroDrawY = (int) Math.round(heroY);
+                drawHeroRange(g2, heroDrawX + HERO_WIDTH / 2, heroDrawY + HERO_WIDTH / 2,
                         new Color(64, 144, 255, 90));
-                drawHero(g2, heroDrawX, playerLaneTop, laneHeight, playerHero.getName(),
+                drawHero(g2, heroDrawX, heroDrawY, playerHero.getName(),
                         playerHero.getCurrentHealth(), playerHero.getMaxHealth(), new Color(64, 144, 255));
             } else {
-                drawRespawnIndicator(g2, (int) Math.round(heroX), playerLaneTop, laneHeight, heroRespawnTimer);
+                drawRespawnIndicator(g2, (int) Math.round(heroX), (int) Math.round(heroY), heroRespawnTimer);
             }
 
             drawBase(g2, getPlayerBaseX(), enemyLaneTop, laneHeight, new Color(66, 135, 245));
             drawBase(g2, getEnemyBaseX(), enemyLaneTop, laneHeight, new Color(200, 70, 70));
             for (UnitInstance unit : playerUnits) {
-                drawUnit(g2, unit, enemyLaneTop, laneHeight, new Color(64, 144, 255));
+                drawUnit(g2, unit, new Color(64, 144, 255));
             }
             if (enemyAlive) {
                 int enemyDrawX = (int) Math.round(enemyX);
-                drawHeroRange(g2, enemyDrawX + HERO_WIDTH / 2, enemyLaneTop + laneHeight / 2,
+                int enemyDrawY = (int) Math.round(enemyY);
+                drawHeroRange(g2, enemyDrawX + HERO_WIDTH / 2, enemyDrawY + HERO_WIDTH / 2,
                         new Color(214, 68, 68, 90));
-                drawHero(g2, enemyDrawX, enemyLaneTop, laneHeight, aiHero.getName(),
+                drawHero(g2, enemyDrawX, enemyDrawY, aiHero.getName(),
                         aiHero.getCurrentHealth(), aiHero.getMaxHealth(), new Color(214, 68, 68));
             } else {
-                drawRespawnIndicator(g2, (int) Math.round(enemyX), enemyLaneTop, laneHeight, enemyRespawnTimer);
+                drawRespawnIndicator(g2, (int) Math.round(enemyX), (int) Math.round(enemyY), enemyRespawnTimer);
             }
 
             drawQueuedUnitsOverlay(g2, width);
@@ -892,21 +1053,9 @@ public class HeroLineWarsGame extends JFrame {
         }
 
         private boolean isInPlayerLane(int y) {
-            int laneTop = LANE_MARGIN;
-            int laneHeight = calculateLaneHeight();
+            int laneTop = getPlayerLaneTop();
+            int laneHeight = getLaneHeight();
             return y >= laneTop && y <= laneTop + laneHeight;
-        }
-
-        private int calculateLaneHeight() {
-            int height = getHeight();
-            if (height <= 0) {
-                height = getPreferredSize().height;
-            }
-            int available = height - 2 * LANE_MARGIN - LANE_GAP;
-            if (available < 200) {
-                available = 200;
-            }
-            return available / 2;
         }
 
         private void drawBase(Graphics2D g2, int baseX, int laneTop, int laneHeight, Color color) {
@@ -933,11 +1082,10 @@ public class HeroLineWarsGame extends JFrame {
             g2.fillRoundRect(baseX, baseY - barHeight - 6, (int) Math.round(barWidth * ratio), barHeight, 8, 8);
         }
 
-        private void drawHero(Graphics2D g2, int x, int laneTop, int laneHeight, String name, int currentHp, int maxHp, Color color) {
+        private void drawHero(Graphics2D g2, int x, int y, String name, int currentHp, int maxHp, Color color) {
             int diameter = HERO_WIDTH;
-            int centerY = laneTop + laneHeight / 2;
-            int drawX = (int) Math.round(x);
-            int drawY = centerY - diameter / 2;
+            int drawX = x;
+            int drawY = y;
             g2.setColor(color);
             g2.fillOval(drawX, drawY, diameter, diameter);
             g2.setColor(Color.BLACK);
@@ -959,10 +1107,9 @@ public class HeroLineWarsGame extends JFrame {
             g2.drawString(name, drawX + (HERO_WIDTH - textWidth) / 2, barY - 2);
         }
 
-        private void drawUnit(Graphics2D g2, UnitInstance unit, int laneTop, int laneHeight, Color color) {
-            int centerY = laneTop + laneHeight / 2;
+        private void drawUnit(Graphics2D g2, UnitInstance unit, Color color) {
             int drawX = (int) Math.round(unit.x);
-            int drawY = centerY - UNIT_SIZE / 2;
+            int drawY = (int) Math.round(unit.y);
             g2.setColor(unit.engaged ? color.darker() : color);
             g2.fillOval(drawX, drawY, UNIT_SIZE, UNIT_SIZE);
             g2.setColor(Color.BLACK);
@@ -1030,11 +1177,10 @@ public class HeroLineWarsGame extends JFrame {
             g2.drawString(hint, (width - hintWidth) / 2, titleY + 28);
         }
 
-        private void drawRespawnIndicator(Graphics2D g2, int x, int laneTop, int laneHeight, int timer) {
+        private void drawRespawnIndicator(Graphics2D g2, int x, int y, int timer) {
             int diameter = HERO_WIDTH;
-            int centerY = laneTop + laneHeight / 2;
-            int drawX = (int) Math.round(x);
-            int drawY = centerY - diameter / 2;
+            int drawX = x;
+            int drawY = y;
             g2.setColor(new Color(120, 120, 120, 150));
             g2.fillOval(drawX, drawY, diameter, diameter);
             g2.setColor(Color.LIGHT_GRAY);
@@ -1095,10 +1241,10 @@ public class HeroLineWarsGame extends JFrame {
         java.util.List<UnitType> enemyWave = enemyTeam.drainQueuedUnits();
 
         for (UnitType type : playerWave) {
-            playerUnits.add(new UnitInstance(type, getPlayerBaseX() + BASE_WIDTH + 8, true));
+            playerUnits.add(createUnitInstance(type, true));
         }
         for (UnitType type : enemyWave) {
-            enemyUnits.add(new UnitInstance(type, getEnemyBaseX() - UNIT_SIZE - 8, false));
+            enemyUnits.add(createUnitInstance(type, false));
         }
 
         if (playerWave.isEmpty() && enemyWave.isEmpty()) {
@@ -1112,13 +1258,31 @@ public class HeroLineWarsGame extends JFrame {
         }
     }
 
+    private UnitInstance createUnitInstance(UnitType type, boolean fromPlayer) {
+        double spawnX = fromPlayer ? getPlayerBaseX() + BASE_WIDTH + 8 : getEnemyBaseX() - UNIT_SIZE - 8;
+        double laneTop = fromPlayer ? getEnemyLaneTop() : getPlayerLaneTop();
+        int laneHeight = getLaneHeight();
+        double topLimit = laneTop + UNIT_VERTICAL_MARGIN;
+        double bottomLimit = laneTop + laneHeight - UNIT_SIZE - UNIT_VERTICAL_MARGIN;
+        if (bottomLimit < topLimit) {
+            bottomLimit = topLimit;
+        }
+        double spawnY = topLimit + (bottomLimit - topLimit) / 2.0;
+        return new UnitInstance(type, spawnX, spawnY, topLimit, bottomLimit, fromPlayer);
+    }
+
     private void resolveHeroUnitCombat() {
         if (gameOver) {
             return;
         }
 
+        double heroCenterX = heroX + HERO_WIDTH / 2.0;
+        double heroCenterY = heroY + HERO_WIDTH / 2.0;
+        double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
+        double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
+
         if (heroAlive) {
-            UnitInstance target = findUnitInRange(enemyUnits, heroX + HERO_WIDTH / 2.0, ATTACK_RANGE);
+            UnitInstance target = findUnitInRange(enemyUnits, heroCenterX, heroCenterY, ATTACK_RANGE);
             if (target != null && heroAttackCooldown <= 0) {
                 target.takeDamage(Math.max(1, playerHero.getAttack()));
                 heroAttackCooldown = ATTACK_COOLDOWN_TICKS;
@@ -1132,7 +1296,7 @@ public class HeroLineWarsGame extends JFrame {
         }
 
         if (enemyAlive) {
-            UnitInstance target = findUnitInRange(playerUnits, enemyX + HERO_WIDTH / 2.0, ATTACK_RANGE);
+            UnitInstance target = findUnitInRange(playerUnits, enemyCenterX, enemyCenterY, ATTACK_RANGE);
             if (target != null && enemyAttackCooldown <= 0) {
                 target.takeDamage(Math.max(1, aiHero.getAttack()));
                 enemyAttackCooldown = ATTACK_COOLDOWN_TICKS;
@@ -1144,8 +1308,9 @@ public class HeroLineWarsGame extends JFrame {
 
         if (heroAlive) {
             for (UnitInstance unit : enemyUnits) {
-                if (unit.isInRange(heroX + HERO_WIDTH / 2.0)) {
+                if (unit.isInRange(heroCenterX, heroCenterY)) {
                     unit.engage();
+                    unit.setTargetCenterY(heroCenterY);
                     if (unit.tryAttackHero(playerHero)) {
                         lastActionMessage = String.format("%s was overwhelmed defending the lane!", playerHero.getName());
                         onPlayerHeroDefeated();
@@ -1157,8 +1322,9 @@ public class HeroLineWarsGame extends JFrame {
 
         if (enemyAlive) {
             for (UnitInstance unit : playerUnits) {
-                if (unit.isInRange(enemyX + HERO_WIDTH / 2.0)) {
+                if (unit.isInRange(enemyCenterX, enemyCenterY)) {
                     unit.engage();
+                    unit.setTargetCenterY(enemyCenterY);
                     if (unit.tryAttackHero(aiHero)) {
                         onEnemyHeroDefeated();
                         break;
@@ -1171,26 +1337,26 @@ public class HeroLineWarsGame extends JFrame {
         playerUnits.removeIf(UnitInstance::isDead);
     }
 
-    private UnitInstance findUnitInRange(java.util.List<UnitInstance> units, double referenceX, int range) {
+    private UnitInstance findUnitInRange(java.util.List<UnitInstance> units, double referenceX, double referenceY, int range) {
         UnitInstance nearest = null;
         double bestDistance = Double.MAX_VALUE;
         for (UnitInstance unit : units) {
-            double distance = Math.abs(unit.getCenterX() - referenceX);
-            if (distance <= range && distance < bestDistance) {
-                bestDistance = distance;
+            double dist = distance(unit.getCenterX(), unit.getCenterY(), referenceX, referenceY);
+            if (dist <= range && dist < bestDistance) {
+                bestDistance = dist;
                 nearest = unit;
             }
         }
         return nearest;
     }
 
-    private UnitInstance findNearestUnit(java.util.List<UnitInstance> units, double referenceX) {
+    private UnitInstance findNearestUnit(java.util.List<UnitInstance> units, double referenceX, double referenceY) {
         UnitInstance nearest = null;
         double bestDistance = Double.MAX_VALUE;
         for (UnitInstance unit : units) {
-            double distance = Math.abs(unit.getCenterX() - referenceX);
-            if (distance < bestDistance) {
-                bestDistance = distance;
+            double dist = distance(unit.getCenterX(), unit.getCenterY(), referenceX, referenceY);
+            if (dist < bestDistance) {
+                bestDistance = dist;
                 nearest = unit;
             }
         }
@@ -1201,33 +1367,52 @@ public class HeroLineWarsGame extends JFrame {
         if (gameOver) {
             return;
         }
+        int laneHeight = getLaneHeight();
+        double playerUnitTop = getEnemyLaneTop() + UNIT_VERTICAL_MARGIN;
+        double playerUnitBottom = getEnemyLaneTop() + laneHeight - UNIT_SIZE - UNIT_VERTICAL_MARGIN;
+        double enemyUnitTop = getPlayerLaneTop() + UNIT_VERTICAL_MARGIN;
+        double enemyUnitBottom = getPlayerLaneTop() + laneHeight - UNIT_SIZE - UNIT_VERTICAL_MARGIN;
+        if (playerUnitBottom < playerUnitTop) {
+            playerUnitBottom = playerUnitTop;
+        }
+        if (enemyUnitBottom < enemyUnitTop) {
+            enemyUnitBottom = enemyUnitTop;
+        }
+
         for (UnitInstance unit : playerUnits) {
+            unit.updateLaneBounds(playerUnitTop, playerUnitBottom);
             unit.preUpdate();
             unit.advance(UNIT_SPEED, getEnemyBaseX() - UNIT_SIZE);
         }
         for (UnitInstance unit : enemyUnits) {
+            unit.updateLaneBounds(enemyUnitTop, enemyUnitBottom);
             unit.preUpdate();
             unit.advance(-UNIT_SPEED, getPlayerBaseX() + BASE_WIDTH);
         }
 
         for (UnitInstance playerUnit : playerUnits) {
             for (UnitInstance enemyUnit : enemyUnits) {
-                double distance = Math.abs(playerUnit.getCenterX() - enemyUnit.getCenterX());
-                boolean playerInRange = distance <= playerUnit.getRange();
-                boolean enemyInRange = distance <= enemyUnit.getRange();
+                double separation = distance(playerUnit.getCenterX(), playerUnit.getCenterY(), enemyUnit.getCenterX(),
+                        enemyUnit.getCenterY());
+                boolean playerInRange = separation <= playerUnit.getRange();
+                boolean enemyInRange = separation <= enemyUnit.getRange();
                 if (!playerInRange && !enemyInRange) {
                     continue;
                 }
-                if (distance < UNIT_SIZE) {
+                if (separation < UNIT_SIZE) {
                     double midpoint = (playerUnit.getCenterX() + enemyUnit.getCenterX()) / 2.0;
                     playerUnit.lockAt(midpoint - UNIT_SIZE);
                     enemyUnit.lockAt(midpoint);
+                    playerUnit.setTargetCenterY(enemyUnit.getCenterY());
+                    enemyUnit.setTargetCenterY(playerUnit.getCenterY());
                 } else {
                     if (playerInRange) {
                         playerUnit.engage();
+                        playerUnit.setTargetCenterY(enemyUnit.getCenterY());
                     }
                     if (enemyInRange) {
                         enemyUnit.engage();
+                        enemyUnit.setTargetCenterY(playerUnit.getCenterY());
                     }
                 }
                 if (playerInRange) {
@@ -1244,6 +1429,7 @@ public class HeroLineWarsGame extends JFrame {
             UnitInstance unit = iterator.next();
             if (unit.x + UNIT_SIZE >= getEnemyBaseX()) {
                 unit.lockAt(getEnemyBaseX() - UNIT_SIZE);
+                unit.setTargetCenterY(getEnemyBaseCenterY());
                 if (unit.tryAttackBase()) {
                     enemyBaseHealth = Math.max(0, enemyBaseHealth - unit.type.getDamage());
                     checkVictoryConditions();
@@ -1259,6 +1445,7 @@ public class HeroLineWarsGame extends JFrame {
             UnitInstance unit = iterator.next();
             if (unit.x <= getPlayerBaseX() + BASE_WIDTH) {
                 unit.lockAt(getPlayerBaseX() + BASE_WIDTH);
+                unit.setTargetCenterY(getPlayerBaseCenterY());
                 if (unit.tryAttackBase()) {
                     playerBaseHealth = Math.max(0, playerBaseHealth - unit.type.getDamage());
                     checkVictoryConditions();
@@ -1280,20 +1467,30 @@ public class HeroLineWarsGame extends JFrame {
         private boolean engagedLastTick;
         private final boolean fromPlayer;
         private int spawnShield;
+        private double y;
+        private double targetY;
+        private double topLimit;
+        private double bottomLimit;
+        private double laneCenter;
 
-        UnitInstance(UnitType type, double x, boolean fromPlayer) {
+        UnitInstance(UnitType type, double x, double y, double topLimit, double bottomLimit, boolean fromPlayer) {
             this.type = type;
             this.x = x;
+            this.y = y;
             this.health = type.getHealth();
             this.attackCooldown = 0;
             this.baseAttackCooldown = 0;
             this.fromPlayer = fromPlayer;
             this.spawnShield = SPAWN_SHIELD_TICKS;
+            updateLaneBounds(topLimit, bottomLimit);
+            this.targetY = clamp(y, this.topLimit, this.bottomLimit);
         }
 
         void preUpdate() {
             engagedLastTick = engaged;
             engaged = false;
+            y = clamp(y, topLimit, bottomLimit);
+            targetY = clamp(targetY, topLimit, bottomLimit);
             if (attackCooldown > 0) {
                 attackCooldown--;
             }
@@ -1303,9 +1500,14 @@ public class HeroLineWarsGame extends JFrame {
             if (spawnShield > 0) {
                 spawnShield--;
             }
+            if (!engagedLastTick) {
+                targetY = laneCenter;
+            }
         }
 
         void advance(double speed, double clampPosition) {
+            double verticalSpeed = Math.max(1.2, Math.abs(speed));
+            y = clamp(approach(y, targetY, verticalSpeed), topLimit, bottomLimit);
             if (engaged || engagedLastTick) {
                 return;
             }
@@ -1352,6 +1554,19 @@ public class HeroLineWarsGame extends JFrame {
             engagedLastTick = true;
         }
 
+        void updateLaneBounds(double newTopLimit, double newBottomLimit) {
+            if (newBottomLimit < newTopLimit) {
+                double temp = newTopLimit;
+                newTopLimit = newBottomLimit;
+                newBottomLimit = temp;
+            }
+            this.topLimit = newTopLimit;
+            this.bottomLimit = newBottomLimit;
+            this.laneCenter = this.topLimit + (this.bottomLimit - this.topLimit) / 2.0;
+            this.y = clamp(this.y, this.topLimit, this.bottomLimit);
+            this.targetY = clamp(this.targetY, this.topLimit, this.bottomLimit);
+        }
+
         void takeDamage(int amount) {
             if (spawnShield > 0) {
                 return;
@@ -1375,12 +1590,20 @@ public class HeroLineWarsGame extends JFrame {
             return x + UNIT_SIZE / 2.0;
         }
 
-        boolean isInRange(UnitInstance other) {
-            return Math.abs(getCenterX() - other.getCenterX()) <= getRange();
+        double getCenterY() {
+            return y + UNIT_SIZE / 2.0;
         }
 
-        boolean isInRange(double targetX) {
-            return Math.abs(getCenterX() - targetX) <= getRange();
+        void setTargetCenterY(double centerY) {
+            targetY = clamp(centerY - UNIT_SIZE / 2.0, topLimit, bottomLimit);
+        }
+
+        boolean isInRange(UnitInstance other) {
+            return distance(getCenterX(), getCenterY(), other.getCenterX(), other.getCenterY()) <= getRange();
+        }
+
+        boolean isInRange(double targetX, double targetY) {
+            return distance(getCenterX(), getCenterY(), targetX, targetY) <= getRange();
         }
 
         boolean hasSpawnShield() {
