@@ -2,7 +2,9 @@ package com.example.herolinewars;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Random;
 
 /**
@@ -29,12 +31,16 @@ public class Hero {
     private final String name;
     private final PrimaryAttribute primaryAttribute;
     private final List<Item> inventory = new ArrayList<>();
+    private final Map<Item.EquipmentSlot, Item> equippedUniqueItems = new EnumMap<>(Item.EquipmentSlot.class);
 
     private final int baseMaxHealth;
     private final int baseAttack;
     private final int baseDefense;
     private int itemAttackBonus;
     private int itemDefenseBonus;
+    private int itemStrengthBonus;
+    private int itemDexterityBonus;
+    private int itemIntelligenceBonus;
 
     private final int strength;
     private final int dexterity;
@@ -75,15 +81,15 @@ public class Hero {
     }
 
     public int getStrength() {
-        return strength;
+        return strength + itemStrengthBonus;
     }
 
     public int getDexterity() {
-        return dexterity;
+        return dexterity + itemDexterityBonus;
     }
 
     public int getIntelligence() {
-        return intelligence;
+        return intelligence + itemIntelligenceBonus;
     }
 
     public int getMaxHealth() {
@@ -107,19 +113,19 @@ public class Hero {
     }
 
     public double getAttackSpeedMultiplier() {
-        return 1.0 + dexterity * ATTACK_SPEED_PER_DEX;
+        return 1.0 + getDexterity() * ATTACK_SPEED_PER_DEX;
     }
 
     public double getEvasionChance() {
-        return Math.min(MAX_EVASION, dexterity * EVASION_PER_DEX);
+        return Math.min(MAX_EVASION, getDexterity() * EVASION_PER_DEX);
     }
 
     public double getCriticalChance() {
-        return Math.min(MAX_CRITICAL, intelligence * CRITICAL_PER_INT);
+        return Math.min(MAX_CRITICAL, getIntelligence() * CRITICAL_PER_INT);
     }
 
     public int getMaxEnergyShield() {
-        return intelligence * SHIELD_PER_INT;
+        return getIntelligence() * SHIELD_PER_INT;
     }
 
     public int rollAttackDamage() {
@@ -163,11 +169,34 @@ public class Hero {
         return true;
     }
 
-    public void applyItem(Item item) {
+    public boolean applyItem(Item item) {
+        Item.EquipmentSlot slot = item.getSlot();
+        if (slot != null && slot.isUnique()) {
+            Item replaced = equippedUniqueItems.put(slot, item);
+            if (replaced != null) {
+                inventory.remove(replaced);
+                itemAttackBonus -= replaced.getAttackBonus();
+                itemDefenseBonus -= replaced.getDefenseBonus();
+                itemStrengthBonus -= replaced.getStrengthBonus();
+                itemDexterityBonus -= replaced.getDexterityBonus();
+                itemIntelligenceBonus -= replaced.getIntelligenceBonus();
+            }
+        }
         inventory.add(item);
         itemAttackBonus += item.getAttackBonus();
         itemDefenseBonus += item.getDefenseBonus();
+        itemStrengthBonus += item.getStrengthBonus();
+        itemDexterityBonus += item.getDexterityBonus();
+        itemIntelligenceBonus += item.getIntelligenceBonus();
         recalculateStats();
+        return true;
+    }
+
+    public Item getEquippedItem(Item.EquipmentSlot slot) {
+        if (slot == null || !slot.isUnique()) {
+            return null;
+        }
+        return equippedUniqueItems.get(slot);
     }
 
     public List<Item> getInventory() {
@@ -212,9 +241,10 @@ public class Hero {
     }
 
     private void recalculateStats() {
-        this.maxHealth = baseMaxHealth + (int) Math.round(strength * HEALTH_PER_STRENGTH);
+        int totalStrength = getStrength();
+        this.maxHealth = baseMaxHealth + (int) Math.round(totalStrength * HEALTH_PER_STRENGTH);
         this.attack = baseAttack + itemAttackBonus + calculatePrimaryDamageBonus();
-        this.defense = baseDefense + itemDefenseBonus + (int) Math.round(strength * DEFENSE_PER_STRENGTH);
+        this.defense = baseDefense + itemDefenseBonus + (int) Math.round(totalStrength * DEFENSE_PER_STRENGTH);
         if (currentHealth > maxHealth) {
             currentHealth = maxHealth;
         }
@@ -231,12 +261,12 @@ public class Hero {
     private int getPrimaryAttributeValue() {
         switch (primaryAttribute) {
             case STRENGTH:
-                return strength;
+                return getStrength();
             case DEXTERITY:
-                return dexterity;
+                return getDexterity();
             case INTELLIGENCE:
             default:
-                return intelligence;
+                return getIntelligence();
         }
     }
 }

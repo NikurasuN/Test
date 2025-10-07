@@ -55,12 +55,28 @@ public class HeroLineWarsGame extends JFrame {
     private static final int SPAWN_SHIELD_TICKS = 60;
 
     private static final Item[] SHOP_ITEMS = new Item[] {
-            new Item("Sharpened Arrows", 6, 0, 85, "Lightweight arrowheads that increase ranged damage."),
-            new Item("Bulwark Shield", 0, 6, 90, "Sturdy shield that absorbs blows."),
-            new Item("War Banner", 4, 3, 110, "Rallying banner granting balanced power."),
-            new Item("Arcane Tome", 9, 0, 140, "Magical tome that empowers offensive spells."),
-            new Item("Guardian Armor", 0, 9, 150, "Heavy armor that keeps you standing longer."),
-            new Item("Heroic Relic", 6, 6, 185, "Relic of old heroes granting all-around strength.")
+            new Item("Sharpened Arrows", 6, 0, 85,
+                    "Lightweight arrowheads that increase ranged damage.", null, 0, 0, 0),
+            new Item("Bulwark Shield", 0, 6, 90,
+                    "Sturdy shield that absorbs blows.", Item.EquipmentSlot.SHIELD, 1, 0, 0),
+            new Item("War Banner", 4, 3, 110,
+                    "Rallying banner granting balanced power.", Item.EquipmentSlot.ACCESSORY, 1, 1, 0),
+            new Item("Arcane Tome", 9, 0, 140,
+                    "Magical tome that empowers offensive spells.", Item.EquipmentSlot.WEAPON, 0, 0, 2),
+            new Item("Guardian Armor", 0, 9, 150,
+                    "Heavy armor that keeps you standing longer.", Item.EquipmentSlot.CHESTPLATE, 1, 0, 0),
+            new Item("Heroic Relic", 6, 6, 185,
+                    "Relic of old heroes granting all-around strength.", Item.EquipmentSlot.ACCESSORY, 2, 2, 2),
+            new Item("Steel Helm", 0, 4, 160,
+                    "Fortified helmet that hardens resolve.", Item.EquipmentSlot.HELMET, 2, 0, 0),
+            new Item("Knight's Chestplate", 0, 7, 210,
+                    "Immovable armor that protects the torso.", Item.EquipmentSlot.CHESTPLATE, 3, 0, 0),
+            new Item("Ring of Fortitude", 0, 0, 125,
+                    "Enchanted band that bolsters physical might.", Item.EquipmentSlot.RING, 3, 0, 0),
+            new Item("Ring of Swiftness", 0, 0, 125,
+                    "A nimble ring that heightens agility.", Item.EquipmentSlot.RING, 0, 3, 0),
+            new Item("Ring of Insight", 0, 0, 125,
+                    "A crystalline ring that sharpens arcane focus.", Item.EquipmentSlot.RING, 0, 0, 3)
     };
 
     private final Random random = new Random();
@@ -163,7 +179,25 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private String formatItemLabel(Item item) {
-        return String.format("%s - %dG (+%d ATK, +%d DEF)", item.getName(), item.getCost(), item.getAttackBonus(), item.getDefenseBonus());
+        java.util.List<String> stats = new java.util.ArrayList<>();
+        if (item.getAttackBonus() != 0) {
+            stats.add(String.format("+%d ATK", item.getAttackBonus()));
+        }
+        if (item.getDefenseBonus() != 0) {
+            stats.add(String.format("+%d DEF", item.getDefenseBonus()));
+        }
+        if (item.getStrengthBonus() != 0) {
+            stats.add(String.format("+%d STR", item.getStrengthBonus()));
+        }
+        if (item.getDexterityBonus() != 0) {
+            stats.add(String.format("+%d DEX", item.getDexterityBonus()));
+        }
+        if (item.getIntelligenceBonus() != 0) {
+            stats.add(String.format("+%d INT", item.getIntelligenceBonus()));
+        }
+        String statsText = stats.isEmpty() ? "No bonuses" : String.join(", ", stats);
+        String slotText = item.getSlot() != null ? String.format(" [%s]", item.getSlot().getDisplayName()) : "";
+        return String.format("%s - %dG (%s)%s", item.getName(), item.getCost(), statsText, slotText);
     }
 
     private void updateShopGoldLabel(JLabel label) {
@@ -174,17 +208,30 @@ public class HeroLineWarsGame extends JFrame {
         if (playerHero == null) {
             return;
         }
+        Item.EquipmentSlot slot = item.getSlot();
+        Item previous = playerHero.getEquippedItem(slot);
+
         if (!playerHero.spendGold(item.getCost())) {
             messageLabel.setText(String.format("Not enough gold for %s.", item.getName()));
             return;
         }
-        playerHero.applyItem(item);
-        lastActionMessage = String.format("Purchased %s from the shop!", item.getName());
+        if (!playerHero.applyItem(item)) {
+            // Defensive guard: if equipping fails, refund the purchase.
+            playerHero.addGold(item.getCost());
+            messageLabel.setText(String.format("Unable to equip %s.", item.getName()));
+            return;
+        }
+        if (previous != null && slot != null && slot.isUnique()) {
+            lastActionMessage = String.format("Replaced %s with %s.", previous.getName(), item.getName());
+            messageLabel.setText(String.format("%s replaced %s.", item.getName(), previous.getName()));
+        } else {
+            lastActionMessage = String.format("Purchased %s from the shop!", item.getName());
+            messageLabel.setText(String.format("%s equipped!", item.getName()));
+        }
         updateShopGoldLabel(goldLabel);
         updateInventoryLabel();
         refreshHud();
         battlefieldPanel.repaint();
-        messageLabel.setText(String.format("%s equipped!", item.getName()));
     }
 
     private void openPauseMenu() {
