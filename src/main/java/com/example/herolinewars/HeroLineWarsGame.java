@@ -10,6 +10,7 @@ import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import javax.swing.WindowConstants;
+import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.Dimension;
@@ -38,7 +39,6 @@ public class HeroLineWarsGame extends JFrame {
     private static final int LANE_GAP = 40;
     private static final double HERO_SPEED = 4.5;
     private static final double ENEMY_SPEED = 3.4;
-    private static final int ATTACK_RANGE = 72;
     private static final int ATTACK_COOLDOWN_TICKS = 20;
     private static final int BASE_ATTACK_COOLDOWN_TICKS = 28;
     private static final int RESPAWN_TICKS = 120;
@@ -54,6 +54,8 @@ public class HeroLineWarsGame extends JFrame {
     private static final int UNIT_BASE_ATTACK_COOLDOWN_TICKS = 30;
     private static final int UNIT_KILL_REWARD = 6;
     private static final int SPAWN_SHIELD_TICKS = 60;
+    private static final int EXPERIENCE_PER_UNIT_KILL = 18;
+    private static final int EXPERIENCE_PER_HERO_KILL = 150;
 
     private static final Item[] SHOP_ITEMS = new Item[] {
             new Item("Sharpened Arrows", 6, 0, 85,
@@ -99,6 +101,7 @@ public class HeroLineWarsGame extends JFrame {
     private final JLabel heroSummaryLabel = new JLabel("Hero interface locked until a hero is chosen.");
     private final JLabel heroAttributesLabel = new JLabel();
     private final JLabel heroCombatLabel = new JLabel();
+    private final JLabel heroProgressLabel = new JLabel();
     private final JLabel heroResourceLabel = new JLabel();
 
     private final BattlefieldPanel battlefieldPanel = new BattlefieldPanel();
@@ -265,7 +268,7 @@ public class HeroLineWarsGame extends JFrame {
         JButton restartButton = new JButton("Restart Battle");
         restartButton.addActionListener(e -> {
             dialog.dispose();
-            startBattle();
+            restartToHeroSelection();
         });
         JButton exitButton = new JButton("Exit Game");
         exitButton.addActionListener(e -> {
@@ -294,6 +297,45 @@ public class HeroLineWarsGame extends JFrame {
         dialog.pack();
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
+    }
+
+    private void restartToHeroSelection() {
+        if (gameTimer != null) {
+            gameTimer.stop();
+            gameTimer = null;
+        }
+        paused = false;
+        gameOver = false;
+        heroAlive = false;
+        enemyAlive = false;
+        heroRespawnTimer = 0;
+        enemyRespawnTimer = 0;
+        heroAttackCooldown = 0;
+        enemyAttackCooldown = 0;
+        heroBaseAttackCooldown = 0;
+        enemyBaseAttackCooldown = 0;
+        playerUnits.clear();
+        enemyUnits.clear();
+        playerTeam = null;
+        enemyTeam = null;
+        playerHero = null;
+        aiHero = null;
+        playerBaseHealth = 1000;
+        enemyBaseHealth = 1000;
+        playerKills = 0;
+        enemyKills = 0;
+        lastActionMessage = "Select a hero to begin the battle.";
+        baseLabel.setText("Base HP - You: 0 | Enemy: 0");
+        heroLabel.setText("Hero: None selected");
+        aiLabel.setText("Enemy Hero: Unknown");
+        killsLabel.setText("Kills - You: 0 | Enemy: 0");
+        economyLabel.setText("Economy - Gold 0 (+0) | Enemy Gold 0 (+0)");
+        actionLabel.setText(lastActionMessage);
+        queueLabel.setText("Next Wave: None queued.");
+        inventoryLabel.setText("Inventory: None");
+        updateHeroInterface();
+        battlefieldPanel.repaint();
+        SwingUtilities.invokeLater(this::showHeroSelectionDialog);
     }
 
     private void pauseGame() {
@@ -395,11 +437,13 @@ public class HeroLineWarsGame extends JFrame {
 
         heroAttributesLabel.setForeground(new Color(200, 220, 255));
         heroCombatLabel.setForeground(new Color(200, 220, 255));
+        heroProgressLabel.setForeground(new Color(200, 220, 255));
         heroResourceLabel.setForeground(new Color(200, 220, 255));
 
         panel.add(heroSummaryLabel);
         panel.add(heroAttributesLabel);
         panel.add(heroCombatLabel);
+        panel.add(heroProgressLabel);
         panel.add(heroResourceLabel);
         panel.setOpaque(true);
         return panel;
@@ -415,25 +459,25 @@ public class HeroLineWarsGame extends JFrame {
 
         JPanel heroPanel = new JPanel(new GridLayout(0, 1, 10, 10));
 
-        JButton rangerButton = new JButton("Ranger - Balanced stats and reliable damage.");
+        JButton rangerButton = new JButton("Ranger - Fires arrows from long range (7).");
         rangerButton.addActionListener(e -> {
-            playerHero = new Hero("Ranger", 63, 10, 2, 8, 12, 6, Hero.PrimaryAttribute.DEXTERITY, 180, 12);
+            playerHero = new Hero("Ranger", 63, 10, 2, 8, 12, 6, Hero.PrimaryAttribute.DEXTERITY, 180, 12, 7);
             dialog.dispose();
             startBattle();
         });
         heroPanel.add(rangerButton);
 
-        JButton knightButton = new JButton("Knight - Heavily armored and built to tank waves.");
-        knightButton.addActionListener(e -> {
-            playerHero = new Hero("Knight", 65, 4, 2, 15, 6, 5, Hero.PrimaryAttribute.STRENGTH, 200, 10);
+        JButton berserkerButton = new JButton("Berserker - Close combat specialist with brutal swings (2).");
+        berserkerButton.addActionListener(e -> {
+            playerHero = new Hero("Berserker", 65, 4, 2, 15, 6, 5, Hero.PrimaryAttribute.STRENGTH, 200, 10, 2);
             dialog.dispose();
             startBattle();
         });
-        heroPanel.add(knightButton);
+        heroPanel.add(berserkerButton);
 
-        JButton mageButton = new JButton("Battle Mage - Fragile but deals heavy attacks.");
+        JButton mageButton = new JButton("Mage - Launches arcane bolts from mid range (4).");
         mageButton.addActionListener(e -> {
-            playerHero = new Hero("Battle Mage", 56, 13, 1, 6, 8, 14, Hero.PrimaryAttribute.INTELLIGENCE, 160, 14);
+            playerHero = new Hero("Mage", 56, 13, 1, 6, 8, 14, Hero.PrimaryAttribute.INTELLIGENCE, 160, 14, 4);
             dialog.dispose();
             startBattle();
         });
@@ -607,10 +651,9 @@ public class HeroLineWarsGame extends JFrame {
         double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
         double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
         double distance = distance(heroCenterX, heroCenterY, enemyCenterX, enemyCenterY);
-        if (distance > ATTACK_RANGE) {
-            return;
-        }
-        if (heroAttackCooldown <= 0) {
+        boolean inHeroRange = distance <= playerHero.getAttackRangePixels();
+        boolean inEnemyRange = distance <= aiHero.getAttackRangePixels();
+        if (inHeroRange && heroAttackCooldown <= 0) {
             int damage = Math.max(1, playerHero.rollAttackDamage() - aiHero.getDefense());
             if (aiHero.takeDamage(damage)) {
                 onEnemyHeroDefeated();
@@ -618,7 +661,7 @@ public class HeroLineWarsGame extends JFrame {
             }
             heroAttackCooldown = getHeroAttackCooldownTicks(playerHero);
         }
-        if (enemyAttackCooldown <= 0) {
+        if (inEnemyRange && enemyAttackCooldown <= 0) {
             int damage = Math.max(1, aiHero.rollAttackDamage() - playerHero.getDefense());
             if (playerHero.takeDamage(damage)) {
                 onPlayerHeroDefeated();
@@ -667,7 +710,12 @@ public class HeroLineWarsGame extends JFrame {
         heroRespawnTimer = RESPAWN_TICKS;
         enemyKills++;
         heroAttackCooldown = getHeroAttackCooldownTicks(playerHero);
-        lastActionMessage = "You were defeated! The enemy presses the attack.";
+        StringBuilder builder = new StringBuilder("You were defeated! The enemy presses the attack.");
+        int levels = aiHero.gainExperience(EXPERIENCE_PER_HERO_KILL);
+        if (levels > 0) {
+            builder.append(String.format(" Enemy %s reached level %d!", aiHero.getName(), aiHero.getLevel()));
+        }
+        lastActionMessage = builder.toString();
     }
 
     private void onEnemyHeroDefeated() {
@@ -675,7 +723,12 @@ public class HeroLineWarsGame extends JFrame {
         enemyRespawnTimer = RESPAWN_TICKS;
         playerKills++;
         enemyAttackCooldown = getHeroAttackCooldownTicks(aiHero);
-        lastActionMessage = "Enemy hero defeated! Push the advantage.";
+        StringBuilder builder = new StringBuilder("Enemy hero defeated! Push the advantage.");
+        int levels = playerHero.gainExperience(EXPERIENCE_PER_HERO_KILL);
+        if (levels > 0) {
+            builder.append(String.format(" %s reached level %d!", playerHero.getName(), playerHero.getLevel()));
+        }
+        lastActionMessage = builder.toString();
     }
 
     private void checkVictoryConditions() {
@@ -706,10 +759,12 @@ public class HeroLineWarsGame extends JFrame {
             return;
         }
         baseLabel.setText(String.format("Base HP - You: %d | Enemy: %d", Math.max(0, playerBaseHealth), Math.max(0, enemyBaseHealth)));
-        heroLabel.setText(String.format("Hero: %s | HP %d/%d | Shield %d/%d | ATK %d | DEF %d", playerHero.getName(),
+        heroLabel.setText(String.format("Hero: %s (Lv %d) | HP %d/%d | Shield %d/%d | ATK %d | DEF %d",
+                playerHero.getName(), playerHero.getLevel(),
                 Math.max(0, playerHero.getCurrentHealth()), playerHero.getMaxHealth(), playerHero.getCurrentShield(), playerHero.getMaxEnergyShield(),
                 playerHero.getAttackPower(), playerHero.getDefense()));
-        aiLabel.setText(String.format("Enemy Hero: %s | HP %d/%d | Shield %d/%d | ATK %d | DEF %d", aiHero.getName(),
+        aiLabel.setText(String.format("Enemy Hero: %s (Lv %d) | HP %d/%d | Shield %d/%d | ATK %d | DEF %d",
+                aiHero.getName(), aiHero.getLevel(),
                 Math.max(0, aiHero.getCurrentHealth()), aiHero.getMaxHealth(), aiHero.getCurrentShield(), aiHero.getMaxEnergyShield(),
                 aiHero.getAttackPower(), aiHero.getDefense()));
         killsLabel.setText(String.format("Kills - You: %d | Enemy: %d", playerKills, enemyKills));
@@ -728,19 +783,22 @@ public class HeroLineWarsGame extends JFrame {
             heroSummaryLabel.setText("Hero interface locked until a hero is chosen.");
             heroAttributesLabel.setText("");
             heroCombatLabel.setText("");
+            heroProgressLabel.setText("");
             heroResourceLabel.setText("");
             return;
         }
 
         String primary = playerHero.getPrimaryAttribute().name().substring(0, 1) + playerHero.getPrimaryAttribute().name().substring(1).toLowerCase();
-        heroSummaryLabel.setText(String.format("%s - Primary Attribute: %s", playerHero.getName(), primary));
+        heroSummaryLabel.setText(String.format("%s - Level %d (%s)", playerHero.getName(), playerHero.getLevel(), primary));
         heroAttributesLabel.setText(String.format("Attributes: STR %d | DEX %d | INT %d", playerHero.getStrength(), playerHero.getDexterity(), playerHero.getIntelligence()));
 
         double attackSpeedBonus = (playerHero.getAttackSpeedMultiplier() - 1.0) * 100.0;
         double critChance = playerHero.getCriticalChance() * 100.0;
         double evasion = playerHero.getEvasionChance() * 100.0;
-        heroCombatLabel.setText(String.format("Combat: Damage %d | Crit %.1f%% | Attack Speed %+.1f%% | Evasion %.1f%%",
-                playerHero.getAttackPower(), critChance, attackSpeedBonus, evasion));
+        heroCombatLabel.setText(String.format("Combat: Damage %d | Crit %.1f%% | Attack Speed %+.1f%% | Evasion %.1f%% | Range %d",
+                playerHero.getAttackPower(), critChance, attackSpeedBonus, evasion, playerHero.getAttackRangeUnits()));
+
+        heroProgressLabel.setText(String.format("Progress: XP %d / %d", playerHero.getExperience(), playerHero.getExperienceToNextLevel()));
 
         heroResourceLabel.setText(String.format("Vitals: Health %d/%d | Shield %d/%d | Armor %d",
                 Math.max(0, playerHero.getCurrentHealth()), playerHero.getMaxHealth(),
@@ -792,11 +850,11 @@ public class HeroLineWarsGame extends JFrame {
         int roll = random.nextInt(3);
         switch (roll) {
             case 0:
-                return new Hero("Sentinel", 68, 8, 3, 12, 9, 6, Hero.PrimaryAttribute.STRENGTH, 180, 12);
+                return new Hero("Sentinel", 68, 8, 3, 12, 9, 6, Hero.PrimaryAttribute.STRENGTH, 180, 12, 3);
             case 1:
-                return new Hero("Berserker", 60, 12, 2, 7, 14, 5, Hero.PrimaryAttribute.DEXTERITY, 170, 13);
+                return new Hero("Berserker", 60, 12, 2, 7, 14, 5, Hero.PrimaryAttribute.DEXTERITY, 170, 13, 2);
             default:
-                return new Hero("Warlock", 58, 11, 2, 6, 7, 15, Hero.PrimaryAttribute.INTELLIGENCE, 190, 11);
+                return new Hero("Warlock", 58, 11, 2, 6, 7, 15, Hero.PrimaryAttribute.INTELLIGENCE, 190, 11, 5);
         }
     }
 
@@ -1119,34 +1177,42 @@ public class HeroLineWarsGame extends JFrame {
 
             drawBase(g2, getPlayerBaseX(), playerLaneTop, laneHeight, new Color(66, 135, 245));
             drawBase(g2, getEnemyBaseX(), playerLaneTop, laneHeight, new Color(200, 70, 70));
+            drawSpawnZone(g2, getPlayerSpawnX() + HERO_WIDTH / 2.0, getPlayerSpawnY() + HERO_WIDTH / 2.0,
+                    new Color(80, 190, 90));
             for (UnitInstance unit : enemyUnits) {
                 drawUnit(g2, unit, new Color(214, 68, 68));
             }
-            if (heroAlive) {
-                int heroDrawX = (int) Math.round(heroX);
-                int heroDrawY = (int) Math.round(heroY);
-                drawHeroRange(g2, heroDrawX + HERO_WIDTH / 2, heroDrawY + HERO_WIDTH / 2,
-                        new Color(64, 144, 255, 90));
-                drawHero(g2, heroDrawX, heroDrawY, playerHero.getName(),
-                        playerHero.getCurrentHealth(), playerHero.getMaxHealth(), new Color(64, 144, 255));
-            } else {
-                drawRespawnIndicator(g2, (int) Math.round(heroX), (int) Math.round(heroY), heroRespawnTimer);
+            if (playerHero != null) {
+                if (heroAlive) {
+                    int heroDrawX = (int) Math.round(heroX);
+                    int heroDrawY = (int) Math.round(heroY);
+                    drawHeroRange(g2, heroDrawX + HERO_WIDTH / 2, heroDrawY + HERO_WIDTH / 2,
+                            playerHero.getAttackRangePixels(), new Color(64, 144, 255, 90));
+                    drawHero(g2, heroDrawX, heroDrawY, playerHero.getName(),
+                            playerHero.getCurrentHealth(), playerHero.getMaxHealth(), new Color(64, 144, 255));
+                } else if (heroRespawnTimer > 0) {
+                    drawRespawnIndicator(g2, (int) Math.round(heroX), (int) Math.round(heroY), heroRespawnTimer);
+                }
             }
 
             drawBase(g2, getPlayerBaseX(), enemyLaneTop, laneHeight, new Color(66, 135, 245));
             drawBase(g2, getEnemyBaseX(), enemyLaneTop, laneHeight, new Color(200, 70, 70));
+            drawSpawnZone(g2, getEnemySpawnX() + HERO_WIDTH / 2.0, getEnemySpawnY() + HERO_WIDTH / 2.0,
+                    new Color(80, 190, 90));
             for (UnitInstance unit : playerUnits) {
                 drawUnit(g2, unit, new Color(64, 144, 255));
             }
-            if (enemyAlive) {
-                int enemyDrawX = (int) Math.round(enemyX);
-                int enemyDrawY = (int) Math.round(enemyY);
-                drawHeroRange(g2, enemyDrawX + HERO_WIDTH / 2, enemyDrawY + HERO_WIDTH / 2,
-                        new Color(214, 68, 68, 90));
-                drawHero(g2, enemyDrawX, enemyDrawY, aiHero.getName(),
-                        aiHero.getCurrentHealth(), aiHero.getMaxHealth(), new Color(214, 68, 68));
-            } else {
-                drawRespawnIndicator(g2, (int) Math.round(enemyX), (int) Math.round(enemyY), enemyRespawnTimer);
+            if (aiHero != null) {
+                if (enemyAlive) {
+                    int enemyDrawX = (int) Math.round(enemyX);
+                    int enemyDrawY = (int) Math.round(enemyY);
+                    drawHeroRange(g2, enemyDrawX + HERO_WIDTH / 2, enemyDrawY + HERO_WIDTH / 2,
+                            aiHero.getAttackRangePixels(), new Color(214, 68, 68, 90));
+                    drawHero(g2, enemyDrawX, enemyDrawY, aiHero.getName(),
+                            aiHero.getCurrentHealth(), aiHero.getMaxHealth(), new Color(214, 68, 68));
+                } else if (enemyRespawnTimer > 0) {
+                    drawRespawnIndicator(g2, (int) Math.round(enemyX), (int) Math.round(enemyY), enemyRespawnTimer);
+                }
             }
 
             drawQueuedUnitsOverlay(g2, width);
@@ -1175,9 +1241,9 @@ public class HeroLineWarsGame extends JFrame {
         private void drawBase(Graphics2D g2, int baseX, int laneTop, int laneHeight, Color color) {
             int baseY = laneTop + 20;
             int baseHeight = laneHeight - 40;
-            g2.setColor(color.darker());
-            g2.fillRoundRect(baseX - 6, baseY - 6, BASE_WIDTH + 12, baseHeight + 12, 18, 18);
             g2.setColor(color);
+            g2.fillRoundRect(baseX - 6, baseY - 6, BASE_WIDTH + 12, baseHeight + 12, 18, 18);
+            g2.setColor(new Color(90, 90, 95));
             g2.fillRoundRect(baseX, baseY, BASE_WIDTH, baseHeight, 18, 18);
 
             int barWidth = BASE_WIDTH;
@@ -1240,12 +1306,28 @@ public class HeroLineWarsGame extends JFrame {
             g2.fillRoundRect(drawX, drawY - 8, (int) Math.round(UNIT_SIZE * ratio), 6, 6, 6);
         }
 
-        private void drawHeroRange(Graphics2D g2, int centerX, int centerY, Color color) {
-            int diameter = ATTACK_RANGE * 2;
+        private void drawHeroRange(Graphics2D g2, int centerX, int centerY, int radius, Color color) {
+            int safeRadius = Math.max(12, radius);
+            int diameter = safeRadius * 2;
             g2.setColor(color);
-            g2.fillOval(centerX - ATTACK_RANGE, centerY - ATTACK_RANGE, diameter, diameter);
+            g2.fillOval(centerX - safeRadius, centerY - safeRadius, diameter, diameter);
             g2.setColor(color.darker());
-            g2.drawOval(centerX - ATTACK_RANGE, centerY - ATTACK_RANGE, diameter, diameter);
+            g2.drawOval(centerX - safeRadius, centerY - safeRadius, diameter, diameter);
+        }
+
+        private void drawSpawnZone(Graphics2D g2, double centerX, double centerY, Color color) {
+            int radius = 26;
+            int diameter = radius * 2;
+            int drawX = (int) Math.round(centerX) - radius;
+            int drawY = (int) Math.round(centerY) - radius;
+            Color fill = new Color(color.getRed(), color.getGreen(), color.getBlue(), 90);
+            g2.setColor(fill);
+            g2.fillOval(drawX, drawY, diameter, diameter);
+            java.awt.Stroke previous = g2.getStroke();
+            g2.setStroke(new BasicStroke(2f));
+            g2.setColor(color.darker());
+            g2.drawOval(drawX, drawY, diameter, diameter);
+            g2.setStroke(previous);
         }
 
         private void drawQueuedUnitsOverlay(Graphics2D g2, int width) {
@@ -1396,26 +1478,36 @@ public class HeroLineWarsGame extends JFrame {
         double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
 
         if (heroAlive) {
-            UnitInstance target = findUnitInRange(enemyUnits, heroCenterX, heroCenterY, ATTACK_RANGE);
+            UnitInstance target = findUnitInRange(enemyUnits, heroCenterX, heroCenterY, playerHero.getAttackRangePixels());
             if (target != null && heroAttackCooldown <= 0) {
                 target.takeDamage(Math.max(1, playerHero.rollAttackDamage()));
                 heroAttackCooldown = getHeroAttackCooldownTicks(playerHero);
                 if (target.isDead()) {
                     enemyUnits.remove(target);
                     playerHero.addGold(UNIT_KILL_REWARD);
-                    lastActionMessage = String.format("%s defeated an enemy %s!", playerHero.getName(),
-                            target.getType().getDisplayName());
+                    StringBuilder builder = new StringBuilder(String.format("%s defeated an enemy %s!",
+                            playerHero.getName(), target.getType().getDisplayName()));
+                    int levels = playerHero.gainExperience(EXPERIENCE_PER_UNIT_KILL);
+                    if (levels > 0) {
+                        builder.append(String.format(" %s reached level %d!", playerHero.getName(), playerHero.getLevel()));
+                    }
+                    lastActionMessage = builder.toString();
                 }
             }
         }
 
         if (enemyAlive) {
-            UnitInstance target = findUnitInRange(playerUnits, enemyCenterX, enemyCenterY, ATTACK_RANGE);
+            UnitInstance target = findUnitInRange(playerUnits, enemyCenterX, enemyCenterY, aiHero.getAttackRangePixels());
             if (target != null && enemyAttackCooldown <= 0) {
                 target.takeDamage(Math.max(1, aiHero.rollAttackDamage()));
                 enemyAttackCooldown = getHeroAttackCooldownTicks(aiHero);
                 if (target.isDead()) {
                     playerUnits.remove(target);
+                    int levels = aiHero.gainExperience(EXPERIENCE_PER_UNIT_KILL);
+                    if (levels > 0) {
+                        lastActionMessage = String.format("Enemy %s grew stronger and reached level %d!", aiHero.getName(),
+                                aiHero.getLevel());
+                    }
                 }
             }
         }
