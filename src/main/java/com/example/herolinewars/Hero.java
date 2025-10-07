@@ -108,6 +108,14 @@ public class Hero {
         return attack;
     }
 
+    /**
+     * Legacy accessor retained for backwards compatibility with older game logic.
+     * Prefer {@link #getAttackPower()} for clarity.
+     */
+    public int getAttack() {
+        return getAttackPower();
+    }
+
     public int getDefense() {
         return defense;
     }
