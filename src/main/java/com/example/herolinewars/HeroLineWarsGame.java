@@ -18,6 +18,7 @@ import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
 import java.awt.Graphics2D;
+import java.awt.GradientPaint;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
 import java.awt.event.MouseAdapter;
@@ -30,8 +31,8 @@ import java.util.Random;
  * A lightweight real-time version of Hero Line Wars where the action happens on the lane.
  */
 public class HeroLineWarsGame extends JFrame {
-    private static final int PANEL_WIDTH = 1120;
-    private static final int PANEL_HEIGHT = 560;
+    private static final int PANEL_WIDTH = 1280;
+    private static final int PANEL_HEIGHT = 680;
     private static final int HERO_WIDTH = 48;
     private static final int BASE_WIDTH = 80;
     private static final int BASE_MARGIN = 32;
@@ -40,6 +41,7 @@ public class HeroLineWarsGame extends JFrame {
     private static final int LANES_PER_SIDE = 2;
     private static final int INTRA_LANE_GAP = 24;
     private static final int LANE_CONNECTOR_WIDTH = 140;
+    private static final int LANE_SWITCH_ZONE_WIDTH = 200;
     private static final double HERO_SPEED = 4.5;
     private static final double ENEMY_SPEED = 3.4;
     private static final int ATTACK_COOLDOWN_TICKS = 20;
@@ -145,6 +147,11 @@ public class HeroLineWarsGame extends JFrame {
     private boolean paused;
     private int nextPlayerLaneIndex;
     private int nextEnemyLaneIndex;
+    private int heroLaneIndex;
+    private int enemyLaneIndex;
+
+    private static final int PLAYER_DEFAULT_LANE = 0;
+    private static final int ENEMY_DEFAULT_LANE = LANES_PER_SIDE - 1;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
@@ -432,6 +439,8 @@ public class HeroLineWarsGame extends JFrame {
         enemyTeam = null;
         nextPlayerLaneIndex = 0;
         nextEnemyLaneIndex = 0;
+        heroLaneIndex = PLAYER_DEFAULT_LANE;
+        enemyLaneIndex = ENEMY_DEFAULT_LANE;
         playerHero = null;
         aiHero = null;
         playerBaseHealth = 1000;
@@ -482,18 +491,35 @@ public class HeroLineWarsGame extends JFrame {
         super("Hero Line Wars");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
-        setPreferredSize(new Dimension(1180, 760));
+        setPreferredSize(new Dimension(1420, 920));
+        setMinimumSize(new Dimension(1260, 820));
+        getContentPane().setBackground(new Color(10, 14, 22));
+        setLocationByPlatform(true);
 
         buildInterface();
         pack();
         setLocationRelativeTo(null);
+        setResizable(true);
 
         showHeroSelectionDialog();
     }
 
     private void buildInterface() {
-        JPanel statusPanel = new JPanel(new GridLayout(0, 1));
-        modeLabel.setFont(modeLabel.getFont().deriveFont(Font.BOLD, 16f));
+        JPanel statusPanel = new JPanel(new GridLayout(0, 1, 0, 2));
+        statusPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(12, 18, 12, 18));
+        statusPanel.setOpaque(true);
+        statusPanel.setBackground(new Color(16, 24, 36));
+
+        styleStatusLabel(modeLabel, Font.BOLD, 22f, new Color(210, 230, 255));
+        styleStatusLabel(baseLabel, Font.BOLD, 16f, new Color(230, 235, 245));
+        styleStatusLabel(heroLabel, Font.PLAIN, 15f, new Color(200, 215, 240));
+        styleStatusLabel(aiLabel, Font.PLAIN, 15f, new Color(200, 215, 240));
+        styleStatusLabel(killsLabel, Font.PLAIN, 15f, new Color(200, 215, 240));
+        styleStatusLabel(economyLabel, Font.PLAIN, 15f, new Color(200, 215, 240));
+        styleStatusLabel(queueLabel, Font.PLAIN, 14f, new Color(190, 210, 235));
+        styleStatusLabel(inventoryLabel, Font.PLAIN, 14f, new Color(190, 210, 235));
+        styleStatusLabel(actionLabel, Font.BOLD, 15f, new Color(240, 220, 160));
+
         statusPanel.add(modeLabel);
         statusPanel.add(baseLabel);
         statusPanel.add(heroLabel);
@@ -508,26 +534,37 @@ public class HeroLineWarsGame extends JFrame {
         add(battlefieldPanel, BorderLayout.CENTER);
 
         JPanel commandPanel = new JPanel(new BorderLayout());
-        JLabel helpLabel = new JLabel("Click the lane to reposition. Use the buttons to send reinforcements for more income.", SwingConstants.CENTER);
-        helpLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 0, 6, 0));
+        commandPanel.setOpaque(true);
+        commandPanel.setBackground(new Color(14, 20, 30));
+        JLabel helpLabel = new JLabel(
+                "Click to move. Visit your base to change lanes. Use the buttons to send reinforcements for more income.",
+                SwingConstants.CENTER);
+        helpLabel.setForeground(new Color(210, 220, 235));
+        helpLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 0, 10, 0));
         commandPanel.add(helpLabel, BorderLayout.NORTH);
 
         JPanel unitButtonPanel = new JPanel(new GridLayout(1, 0, 6, 6));
+        unitButtonPanel.setOpaque(false);
         for (UnitType type : UnitType.values()) {
             JButton button = new JButton(String.format("%s (%dG, +%d income)", type.getDisplayName(), type.getCost(), type.getIncomeBonus()));
             button.addActionListener(e -> attemptSendUnit(type));
+            stylePrimaryButton(button);
             unitButtonPanel.add(button);
         }
         unitButtonPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 10, 10, 10));
         commandPanel.add(unitButtonPanel, BorderLayout.CENTER);
 
         JPanel utilityPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT));
+        utilityPanel.setOpaque(false);
         JButton inventoryButton = new JButton("Inventory");
         inventoryButton.addActionListener(e -> openInventoryDialog());
         JButton shopButton = new JButton("Open Shop");
         shopButton.addActionListener(e -> openShopDialog());
         JButton pauseButton = new JButton("Pause");
         pauseButton.addActionListener(e -> openPauseMenu());
+        styleSecondaryButton(inventoryButton);
+        styleSecondaryButton(shopButton);
+        styleSecondaryButton(pauseButton);
         utilityPanel.add(inventoryButton);
         utilityPanel.add(shopButton);
         utilityPanel.add(pauseButton);
@@ -541,6 +578,30 @@ public class HeroLineWarsGame extends JFrame {
         add(southPanel, BorderLayout.SOUTH);
 
         updateHeroInterface();
+    }
+
+    private void styleStatusLabel(JLabel label, int style, float size, Color color) {
+        label.setFont(label.getFont().deriveFont(style, size));
+        label.setForeground(color);
+        label.setOpaque(false);
+    }
+
+    private void stylePrimaryButton(JButton button) {
+        button.setFocusPainted(false);
+        button.setBackground(new Color(40, 64, 92));
+        button.setForeground(Color.WHITE);
+        button.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createLineBorder(new Color(56, 92, 130)),
+                javax.swing.BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+    }
+
+    private void styleSecondaryButton(JButton button) {
+        button.setFocusPainted(false);
+        button.setBackground(new Color(54, 64, 80));
+        button.setForeground(new Color(235, 240, 250));
+        button.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                javax.swing.BorderFactory.createLineBorder(new Color(70, 88, 110)),
+                javax.swing.BorderFactory.createEmptyBorder(6, 10, 6, 10)));
     }
 
     private JPanel createHeroInterfacePanel() {
@@ -682,6 +743,8 @@ public class HeroLineWarsGame extends JFrame {
         enemyUnits.clear();
         nextPlayerLaneIndex = 0;
         nextEnemyLaneIndex = 0;
+        heroLaneIndex = PLAYER_DEFAULT_LANE;
+        enemyLaneIndex = ENEMY_DEFAULT_LANE;
         lastActionMessage = "Battle underway. Send units to pressure the enemy!";
         paused = false;
 
@@ -751,6 +814,7 @@ public class HeroLineWarsGame extends JFrame {
         if (heroAlive) {
             heroX = approach(heroX, heroTargetX, HERO_SPEED);
             heroY = approach(heroY, heroTargetY, HERO_SPEED);
+            updateHeroLaneLock();
         } else {
             if (heroRespawnTimer > 0) {
                 heroRespawnTimer--;
@@ -762,6 +826,7 @@ public class HeroLineWarsGame extends JFrame {
                 heroTargetX = heroX;
                 heroY = getPlayerSpawnY();
                 heroTargetY = heroY;
+                heroLaneIndex = PLAYER_DEFAULT_LANE;
             }
         }
 
@@ -769,14 +834,25 @@ public class HeroLineWarsGame extends JFrame {
             UnitInstance threat = findNearestUnit(playerUnits, enemyX + HERO_WIDTH / 2.0, enemyY + HERO_WIDTH / 2.0);
             if (threat != null) {
                 double desired = threat.getCenterX() - HERO_WIDTH / 2.0 - 18;
-                enemyTargetX = clampHorizontalTarget(desired);
-                enemyTargetY = clampEnemyVerticalTarget(threat.getCenterY() - HERO_WIDTH / 2.0);
+                int targetLane = threat.getLaneIndex();
+                double candidateX = clampHorizontalTarget(desired);
+                if (targetLane != enemyLaneIndex && !shouldAllowEnemyLaneSwitch(candidateX)) {
+                    enemyTargetX = clampHorizontalTarget(getEnemySwitchAnchorX() - HERO_WIDTH / 2.0);
+                    enemyTargetY = clampEnemyVerticalTarget(getEnemyLaneCenterY(enemyLaneIndex) - HERO_WIDTH / 2.0);
+                } else {
+                    enemyTargetX = candidateX;
+                    enemyTargetY = clampEnemyVerticalTarget(threat.getCenterY() - HERO_WIDTH / 2.0);
+                    if (shouldAllowEnemyLaneSwitch(enemyTargetX)) {
+                        enemyLaneIndex = clampEnemyLaneIndex(targetLane);
+                    }
+                }
             } else {
                 enemyTargetX = clampHorizontalTarget(getEnemyBaseX() - HERO_WIDTH - 20);
-                enemyTargetY = clampEnemyVerticalTarget(getEnemyLaneCenterY() - HERO_WIDTH / 2.0);
+                enemyTargetY = clampEnemyVerticalTarget(getEnemyLaneCenterY(enemyLaneIndex) - HERO_WIDTH / 2.0);
             }
             enemyX = approach(enemyX, enemyTargetX, ENEMY_SPEED);
             enemyY = approach(enemyY, enemyTargetY, ENEMY_SPEED);
+            updateEnemyLaneLock();
         } else {
             if (enemyRespawnTimer > 0) {
                 enemyRespawnTimer--;
@@ -788,6 +864,7 @@ public class HeroLineWarsGame extends JFrame {
                 enemyTargetX = enemyX;
                 enemyY = getEnemySpawnY();
                 enemyTargetY = enemyY;
+                enemyLaneIndex = ENEMY_DEFAULT_LANE;
             }
         }
 
@@ -1101,11 +1178,11 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private double getPlayerSpawnY() {
-        return getPlayerClusterCenterY() - HERO_WIDTH / 2.0;
+        return getPlayerLaneCenterY(PLAYER_DEFAULT_LANE) - HERO_WIDTH / 2.0;
     }
 
     private double getEnemySpawnY() {
-        return getEnemyClusterCenterY() - HERO_WIDTH / 2.0;
+        return getEnemyLaneCenterY(ENEMY_DEFAULT_LANE) - HERO_WIDTH / 2.0;
     }
 
     private double getMovementLeftLimit() {
@@ -1246,12 +1323,32 @@ public class HeroLineWarsGame extends JFrame {
         if (max < min) {
             return min;
         }
+        if (!shouldAllowPlayerLaneSwitch()) {
+            int lane = clampPlayerLaneIndex(heroLaneIndex);
+            double laneMin = getPlayerLaneTopLimit(lane);
+            double laneMax = getPlayerLaneBottomLimit(lane);
+            min = Math.max(min, laneMin);
+            max = Math.min(max, laneMax);
+        }
+        if (max < min) {
+            return min;
+        }
         return clamp(value, min, max);
     }
 
     private double clampEnemyVerticalTarget(double value) {
         double min = getEnemyHeroTopLimit();
         double max = getEnemyHeroBottomLimit();
+        if (max < min) {
+            return min;
+        }
+        if (!shouldAllowEnemyLaneSwitch()) {
+            int lane = clampEnemyLaneIndex(enemyLaneIndex);
+            double laneMin = getEnemyLaneTopLimit(lane);
+            double laneMax = getEnemyLaneBottomLimit(lane);
+            min = Math.max(min, laneMin);
+            max = Math.min(max, laneMax);
+        }
         if (max < min) {
             return min;
         }
@@ -1264,8 +1361,14 @@ public class HeroLineWarsGame extends JFrame {
         }
         double targetX = mouseX - HERO_WIDTH / 2.0;
         double targetY = mouseY - HERO_WIDTH / 2.0;
-        heroTargetX = clampHorizontalTarget(targetX);
+        double candidateX = clampHorizontalTarget(targetX);
+        int desiredLane = resolvePlayerLaneIndex(mouseY);
+        if (desiredLane != heroLaneIndex && !shouldAllowPlayerLaneSwitch(candidateX)) {
+            candidateX = clampHorizontalTarget(getPlayerSwitchAnchorX() - HERO_WIDTH / 2.0);
+        }
+        heroTargetX = candidateX;
         heroTargetY = clampHeroVerticalTarget(targetY);
+        refreshHeroLaneSelectionFromTarget();
     }
 
     private void adjustHeroTargetX(double delta) {
@@ -1279,7 +1382,133 @@ public class HeroLineWarsGame extends JFrame {
         if (!heroAlive || paused || gameOver) {
             return;
         }
-        heroTargetY = clampHeroVerticalTarget(heroTargetY + delta);
+        double candidateY = heroTargetY + delta;
+        int desiredLane = resolvePlayerLaneIndex(candidateY + HERO_WIDTH / 2.0);
+        if (desiredLane != heroLaneIndex && !shouldAllowPlayerLaneSwitch(heroTargetX)) {
+            heroTargetX = clampHorizontalTarget(getPlayerSwitchAnchorX() - HERO_WIDTH / 2.0);
+        }
+        heroTargetY = clampHeroVerticalTarget(candidateY);
+        refreshHeroLaneSelectionFromTarget();
+    }
+
+    private void refreshHeroLaneSelectionFromTarget() {
+        if (shouldAllowPlayerLaneSwitch()) {
+            heroLaneIndex = clampPlayerLaneIndex(resolvePlayerLaneIndex(heroTargetY + HERO_WIDTH / 2.0));
+        }
+    }
+
+    private void updateHeroLaneLock() {
+        if (!heroAlive) {
+            return;
+        }
+        double heroCenterX = heroX + HERO_WIDTH / 2.0;
+        if (!isInPlayerSwitchZone(heroCenterX)) {
+            heroLaneIndex = clampPlayerLaneIndex(resolvePlayerLaneIndex(heroY + HERO_WIDTH / 2.0));
+            heroTargetY = clampHeroVerticalTarget(heroTargetY);
+        }
+    }
+
+    private void updateEnemyLaneLock() {
+        if (!enemyAlive) {
+            return;
+        }
+        double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
+        if (!isInEnemySwitchZone(enemyCenterX)) {
+            enemyLaneIndex = clampEnemyLaneIndex(resolveEnemyLaneIndex(enemyY + HERO_WIDTH / 2.0));
+            enemyTargetY = clampEnemyVerticalTarget(enemyTargetY);
+        }
+    }
+
+    private boolean shouldAllowPlayerLaneSwitch() {
+        return shouldAllowPlayerLaneSwitch(heroTargetX);
+    }
+
+    private boolean shouldAllowPlayerLaneSwitch(double candidateTargetX) {
+        double heroCenterX = heroX + HERO_WIDTH / 2.0;
+        double candidateCenterX = candidateTargetX + HERO_WIDTH / 2.0;
+        return isInPlayerSwitchZone(heroCenterX) || isInPlayerSwitchZone(candidateCenterX);
+    }
+
+    private boolean shouldAllowEnemyLaneSwitch() {
+        return shouldAllowEnemyLaneSwitch(enemyTargetX);
+    }
+
+    private boolean shouldAllowEnemyLaneSwitch(double candidateTargetX) {
+        double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
+        double candidateCenterX = candidateTargetX + HERO_WIDTH / 2.0;
+        return isInEnemySwitchZone(enemyCenterX) || isInEnemySwitchZone(candidateCenterX);
+    }
+
+    private boolean isInPlayerSwitchZone(double centerX) {
+        return centerX <= getPlayerBaseX() + BASE_WIDTH + LANE_SWITCH_ZONE_WIDTH;
+    }
+
+    private boolean isInEnemySwitchZone(double centerX) {
+        return centerX >= getEnemyBaseX() - LANE_SWITCH_ZONE_WIDTH;
+    }
+
+    private double getPlayerSwitchAnchorX() {
+        return getPlayerBaseX() + BASE_WIDTH + LANE_SWITCH_ZONE_WIDTH / 2.0;
+    }
+
+    private double getEnemySwitchAnchorX() {
+        return getEnemyBaseX() - LANE_SWITCH_ZONE_WIDTH / 2.0;
+    }
+
+    private int resolvePlayerLaneIndex(double centerY) {
+        int lane = 0;
+        double bestDistance = Double.MAX_VALUE;
+        for (int i = 0; i < LANES_PER_SIDE; i++) {
+            double laneCenter = getPlayerLaneCenterY(i);
+            double distance = Math.abs(centerY - laneCenter);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                lane = i;
+            }
+        }
+        return lane;
+    }
+
+    private int resolveEnemyLaneIndex(double centerY) {
+        int lane = 0;
+        double bestDistance = Double.MAX_VALUE;
+        for (int i = 0; i < LANES_PER_SIDE; i++) {
+            double laneCenter = getEnemyLaneCenterY(i);
+            double distance = Math.abs(centerY - laneCenter);
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                lane = i;
+            }
+        }
+        return lane;
+    }
+
+    private int clampPlayerLaneIndex(int laneIndex) {
+        return Math.max(0, Math.min(LANES_PER_SIDE - 1, laneIndex));
+    }
+
+    private int clampEnemyLaneIndex(int laneIndex) {
+        return Math.max(0, Math.min(LANES_PER_SIDE - 1, laneIndex));
+    }
+
+    private double getPlayerLaneTopLimit(int laneIndex) {
+        double top = getPlayerLaneTop(laneIndex) + HERO_VERTICAL_MARGIN;
+        return Math.max(top, getPlayerHeroTopLimit());
+    }
+
+    private double getPlayerLaneBottomLimit(int laneIndex) {
+        double bottom = getPlayerLaneTop(laneIndex) + getLaneHeight() - HERO_WIDTH - HERO_VERTICAL_MARGIN;
+        return Math.min(bottom, getPlayerHeroBottomLimit());
+    }
+
+    private double getEnemyLaneTopLimit(int laneIndex) {
+        double top = getEnemyLaneTop(laneIndex) + HERO_VERTICAL_MARGIN;
+        return Math.max(top, getEnemyHeroTopLimit());
+    }
+
+    private double getEnemyLaneBottomLimit(int laneIndex) {
+        double bottom = getEnemyLaneTop(laneIndex) + getLaneHeight() - HERO_WIDTH - HERO_VERTICAL_MARGIN;
+        return Math.min(bottom, getEnemyHeroBottomLimit());
     }
 
     private static double approach(double current, double target, double speed) {
@@ -1308,7 +1537,7 @@ public class HeroLineWarsGame extends JFrame {
     private class BattlefieldPanel extends JPanel {
         BattlefieldPanel() {
             setPreferredSize(new Dimension(PANEL_WIDTH, PANEL_HEIGHT));
-            setBackground(new Color(20, 30, 22));
+            setBackground(new Color(8, 12, 18));
             setFocusable(true);
 
             MouseAdapter adapter = new MouseAdapter() {
@@ -1425,17 +1654,26 @@ public class HeroLineWarsGame extends JFrame {
             if (width <= 0) {
                 width = getPreferredSize().width;
             }
+            int height = getHeight();
+            GradientPaint background = new GradientPaint(0, 0, new Color(16, 28, 32), 0, height,
+                    new Color(6, 14, 18));
+            g2.setPaint(background);
+            g2.fillRect(0, 0, width, height);
+            g2.setPaint(null);
             int laneHeight = getLaneHeight();
             int clusterHeight = getClusterHeight();
             int playerClusterTop = getPlayerClusterTop();
             int enemyClusterTop = getEnemyClusterTop();
 
+            drawSwitchZones(g2, width, playerClusterTop, enemyClusterTop, clusterHeight);
             for (int lane = 0; lane < LANES_PER_SIDE; lane++) {
                 drawLaneSurface(g2, width, getPlayerLaneTop(lane), laneHeight);
             }
             for (int lane = 0; lane < LANES_PER_SIDE; lane++) {
                 drawLaneSurface(g2, width, getEnemyLaneTop(lane), laneHeight);
             }
+
+            drawLaneWalls(g2, width, laneHeight);
 
             drawLaneConnector(g2, getPlayerBaseX() + BASE_WIDTH, playerClusterTop, clusterHeight);
             drawLaneConnector(g2, getEnemyBaseX() - LANE_CONNECTOR_WIDTH, enemyClusterTop, clusterHeight);
@@ -1486,32 +1724,92 @@ public class HeroLineWarsGame extends JFrame {
             g2.dispose();
         }
 
+        private void drawSwitchZones(Graphics2D g2, int width, int playerClusterTop, int enemyClusterTop, int clusterHeight) {
+            int playerZoneLeft = Math.max(0, getPlayerBaseX() - 16);
+            int playerZoneWidth = BASE_WIDTH + LANE_SWITCH_ZONE_WIDTH + 32;
+            Color playerColor = new Color(60, 120, 160, 90);
+            g2.setColor(playerColor);
+            g2.fillRoundRect(playerZoneLeft, playerClusterTop, playerZoneWidth, clusterHeight, 28, 28);
+            java.awt.Stroke previous = g2.getStroke();
+            g2.setStroke(new BasicStroke(2f));
+            g2.setColor(new Color(110, 170, 210, 120));
+            g2.drawRoundRect(playerZoneLeft, playerClusterTop, playerZoneWidth, clusterHeight, 28, 28);
+
+            int enemyZoneLeft = getEnemyBaseX() - LANE_SWITCH_ZONE_WIDTH - 16;
+            int enemyZoneWidth = BASE_WIDTH + LANE_SWITCH_ZONE_WIDTH + 32;
+            Color enemyColor = new Color(160, 80, 80, 90);
+            g2.setColor(enemyColor);
+            g2.fillRoundRect(enemyZoneLeft, enemyClusterTop, enemyZoneWidth, clusterHeight, 28, 28);
+            g2.setColor(new Color(210, 120, 120, 120));
+            g2.drawRoundRect(enemyZoneLeft, enemyClusterTop, enemyZoneWidth, clusterHeight, 28, 28);
+            g2.setStroke(previous);
+        }
+
         private void drawLaneSurface(Graphics2D g2, int width, int laneTop, int laneHeight) {
-            g2.setColor(new Color(32, 46, 34));
+            GradientPaint paint = new GradientPaint(0, laneTop, new Color(38, 52, 42), 0,
+                    laneTop + laneHeight, new Color(24, 32, 26));
+            g2.setPaint(paint);
             g2.fillRoundRect(0, laneTop, width, laneHeight, 30, 30);
-            g2.setColor(new Color(28, 40, 30));
-            for (int i = 0; i < width; i += 40) {
-                g2.fillRect(i, laneTop + laneHeight / 2 - 2, 20, 4);
+            g2.setPaint(null);
+            g2.setColor(new Color(30, 44, 36));
+            for (int i = 0; i < width; i += 46) {
+                g2.fillRect(i, laneTop + laneHeight / 2 - 2, 24, 4);
+            }
+        }
+
+        private void drawLaneWalls(Graphics2D g2, int width, int laneHeight) {
+            if (LANES_PER_SIDE <= 1) {
+                return;
+            }
+            int wallThickness = Math.max(12, INTRA_LANE_GAP - 6);
+            int wallArc = Math.min(18, wallThickness);
+            g2.setColor(new Color(20, 28, 40, 220));
+
+            int playerWallStart = getPlayerBaseX() + BASE_WIDTH + LANE_SWITCH_ZONE_WIDTH - 8;
+            int playerWallWidth = width - playerWallStart - 36;
+            for (int lane = 0; lane < LANES_PER_SIDE - 1; lane++) {
+                int gapTop = getPlayerLaneTop(lane) + laneHeight;
+                int wallY = gapTop + Math.max(2, (INTRA_LANE_GAP - wallThickness) / 2);
+                if (playerWallWidth > 0) {
+                    g2.fillRoundRect(playerWallStart, wallY, playerWallWidth, wallThickness, wallArc, wallArc);
+                }
+            }
+
+            int enemyWallWidth = getEnemyBaseX() - LANE_SWITCH_ZONE_WIDTH - 24;
+            for (int lane = 0; lane < LANES_PER_SIDE - 1; lane++) {
+                int gapTop = getEnemyLaneTop(lane) + laneHeight;
+                int wallY = gapTop + Math.max(2, (INTRA_LANE_GAP - wallThickness) / 2);
+                if (enemyWallWidth > 40) {
+                    g2.fillRoundRect(24, wallY, enemyWallWidth, wallThickness, wallArc, wallArc);
+                }
             }
         }
 
         private void drawLaneConnector(Graphics2D g2, int connectorLeftX, int clusterTop, int clusterHeight) {
             int connectorY = clusterTop + 18;
             int connectorHeight = Math.max(20, clusterHeight - 36);
-            g2.setColor(new Color(38, 54, 40));
+            GradientPaint paint = new GradientPaint(connectorLeftX, connectorY, new Color(46, 62, 70),
+                    connectorLeftX, connectorY + connectorHeight, new Color(32, 44, 52));
+            g2.setPaint(paint);
             g2.fillRoundRect(connectorLeftX, connectorY, LANE_CONNECTOR_WIDTH, connectorHeight, 20, 20);
-            g2.setColor(new Color(28, 42, 32));
-            for (int x = connectorLeftX; x < connectorLeftX + LANE_CONNECTOR_WIDTH; x += 24) {
-                g2.fillRect(x, connectorY + connectorHeight / 2 - 2, 14, 4);
+            g2.setPaint(null);
+            g2.setColor(new Color(80, 110, 140, 140));
+            g2.drawRoundRect(connectorLeftX, connectorY, LANE_CONNECTOR_WIDTH, connectorHeight, 20, 20);
+            g2.setColor(new Color(24, 36, 44));
+            for (int x = connectorLeftX + 6; x < connectorLeftX + LANE_CONNECTOR_WIDTH - 6; x += 22) {
+                g2.fillRoundRect(x, connectorY + connectorHeight / 2 - 3, 14, 6, 6, 6);
             }
         }
 
         private void drawBase(Graphics2D g2, int baseX, int clusterTop, int clusterHeight, Color color) {
             int baseY = clusterTop + 20;
             int baseHeight = clusterHeight - 40;
-            g2.setColor(color);
+            GradientPaint glow = new GradientPaint(baseX, baseY, color.brighter(), baseX, baseY + baseHeight,
+                    color.darker());
+            g2.setPaint(glow);
             g2.fillRoundRect(baseX - 6, baseY - 6, BASE_WIDTH + 12, baseHeight + 12, 18, 18);
-            g2.setColor(new Color(90, 90, 95));
+            g2.setPaint(null);
+            g2.setColor(new Color(32, 40, 52));
             g2.fillRoundRect(baseX, baseY, BASE_WIDTH, baseHeight, 18, 18);
 
             int barWidth = BASE_WIDTH;
