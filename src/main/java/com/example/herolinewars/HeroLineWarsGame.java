@@ -65,6 +65,10 @@ public class HeroLineWarsGame extends JFrame {
     private final JLabel killsLabel = new JLabel();
     private final JLabel economyLabel = new JLabel();
     private final JLabel actionLabel = new JLabel("Ready to launch units down the lane.");
+    private final JLabel heroPrimaryLabel = new JLabel();
+    private final JLabel heroStrengthLabel = new JLabel();
+    private final JLabel heroDexterityLabel = new JLabel();
+    private final JLabel heroIntelligenceLabel = new JLabel();
 
     private final BattlefieldPanel battlefieldPanel = new BattlefieldPanel();
     private Timer gameTimer;
@@ -141,7 +145,21 @@ public class HeroLineWarsGame extends JFrame {
         unitButtonPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 10, 10, 10));
         commandPanel.add(unitButtonPanel, BorderLayout.CENTER);
 
+        JPanel heroInterfacePanel = createHeroInterfacePanel();
+        commandPanel.add(heroInterfacePanel, BorderLayout.SOUTH);
+
         add(commandPanel, BorderLayout.SOUTH);
+        refreshHeroInterface();
+    }
+
+    private JPanel createHeroInterfacePanel() {
+        JPanel panel = new JPanel(new GridLayout(0, 1, 2, 2));
+        panel.setBorder(javax.swing.BorderFactory.createTitledBorder("Hero Interface"));
+        panel.add(heroPrimaryLabel);
+        panel.add(heroStrengthLabel);
+        panel.add(heroDexterityLabel);
+        panel.add(heroIntelligenceLabel);
+        return panel;
     }
 
     private void showHeroSelectionDialog() {
@@ -154,25 +172,25 @@ public class HeroLineWarsGame extends JFrame {
 
         JPanel heroPanel = new JPanel(new GridLayout(0, 1, 10, 10));
 
-        JButton rangerButton = new JButton("Ranger - Balanced stats and reliable damage.");
+        JButton rangerButton = new JButton("Ranger - Dexterity primary with swift volleys.");
         rangerButton.addActionListener(e -> {
-            playerHero = new Hero("Ranger", 95, 16, 4, 180, 12);
+            playerHero = new Hero("Ranger", 12, 16, 10, Hero.PrimaryAttribute.DEXTERITY, 40, 6, 2, 180, 12);
             dialog.dispose();
             startBattle();
         });
         heroPanel.add(rangerButton);
 
-        JButton knightButton = new JButton("Knight - Heavily armored and built to tank waves.");
+        JButton knightButton = new JButton("Knight - Strength primary and steadfast defender.");
         knightButton.addActionListener(e -> {
-            playerHero = new Hero("Knight", 125, 12, 7, 200, 10);
+            playerHero = new Hero("Knight", 18, 8, 6, Hero.PrimaryAttribute.STRENGTH, 42, 4, 3, 200, 10);
             dialog.dispose();
             startBattle();
         });
         heroPanel.add(knightButton);
 
-        JButton mageButton = new JButton("Battle Mage - Fragile but deals heavy attacks.");
+        JButton mageButton = new JButton("Battle Mage - Intelligence primary with explosive bursts.");
         mageButton.addActionListener(e -> {
-            playerHero = new Hero("Battle Mage", 80, 20, 3, 160, 14);
+            playerHero = new Hero("Battle Mage", 8, 10, 18, Hero.PrimaryAttribute.INTELLIGENCE, 40, 7, 1, 160, 14);
             dialog.dispose();
             startBattle();
         });
@@ -328,35 +346,40 @@ public class HeroLineWarsGame extends JFrame {
             return;
         }
         if (heroAttackCooldown <= 0) {
-            int damage = Math.max(1, playerHero.getAttack() - aiHero.getDefense());
+            int damage = computeHeroDamage(playerHero, aiHero);
             if (aiHero.takeDamage(damage)) {
                 onEnemyHeroDefeated();
                 return;
             }
-            heroAttackCooldown = ATTACK_COOLDOWN_TICKS;
+            heroAttackCooldown = playerHero.getAttackDelayTicks(ATTACK_COOLDOWN_TICKS);
         }
         if (enemyAttackCooldown <= 0) {
-            int damage = Math.max(1, aiHero.getAttack() - playerHero.getDefense());
+            int damage = computeHeroDamage(aiHero, playerHero);
             if (playerHero.takeDamage(damage)) {
                 onPlayerHeroDefeated();
                 return;
             }
-            enemyAttackCooldown = ATTACK_COOLDOWN_TICKS;
+            enemyAttackCooldown = aiHero.getAttackDelayTicks(ATTACK_COOLDOWN_TICKS);
         }
+    }
+
+    private int computeHeroDamage(Hero attacker, Hero defender) {
+        int rawDamage = attacker.rollAttackDamage(random);
+        return Math.max(1, rawDamage - defender.getDefense());
     }
 
     private void handleBasePressure() {
         if (heroAlive && !enemyAlive) {
             if (heroBaseAttackCooldown <= 0 && heroX + HERO_WIDTH >= getEnemyBaseX()) {
                 enemyBaseHealth = Math.max(0, enemyBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, playerHero.getAttack() * 3));
-                heroBaseAttackCooldown = BASE_ATTACK_COOLDOWN_TICKS;
+                heroBaseAttackCooldown = playerHero.getAttackDelayTicks(BASE_ATTACK_COOLDOWN_TICKS);
                 checkVictoryConditions();
             }
         }
         if (enemyAlive && !heroAlive) {
             if (enemyBaseAttackCooldown <= 0 && enemyX <= getPlayerBaseX() + BASE_WIDTH) {
                 playerBaseHealth = Math.max(0, playerBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, aiHero.getAttack() * 3));
-                enemyBaseAttackCooldown = BASE_ATTACK_COOLDOWN_TICKS;
+                enemyBaseAttackCooldown = aiHero.getAttackDelayTicks(BASE_ATTACK_COOLDOWN_TICKS);
                 checkVictoryConditions();
             }
         }
@@ -366,7 +389,7 @@ public class HeroLineWarsGame extends JFrame {
         heroAlive = false;
         heroRespawnTimer = RESPAWN_TICKS;
         enemyKills++;
-        heroAttackCooldown = ATTACK_COOLDOWN_TICKS;
+        heroAttackCooldown = playerHero.getAttackDelayTicks(ATTACK_COOLDOWN_TICKS);
         lastActionMessage = "You were defeated! The enemy presses the attack.";
     }
 
@@ -374,7 +397,7 @@ public class HeroLineWarsGame extends JFrame {
         enemyAlive = false;
         enemyRespawnTimer = RESPAWN_TICKS;
         playerKills++;
-        enemyAttackCooldown = ATTACK_COOLDOWN_TICKS;
+        enemyAttackCooldown = aiHero.getAttackDelayTicks(ATTACK_COOLDOWN_TICKS);
         lastActionMessage = "Enemy hero defeated! Push the advantage.";
     }
 
@@ -403,29 +426,68 @@ public class HeroLineWarsGame extends JFrame {
 
     private void refreshHud() {
         if (playerHero == null || aiHero == null) {
+            refreshHeroInterface();
             return;
         }
         baseLabel.setText(String.format("Base HP - You: %d | Enemy: %d", Math.max(0, playerBaseHealth), Math.max(0, enemyBaseHealth)));
-        heroLabel.setText(String.format("Hero: %s | HP %d/%d | ATK %d | DEF %d", playerHero.getName(),
-                Math.max(0, playerHero.getCurrentHealth()), playerHero.getMaxHealth(), playerHero.getAttack(), playerHero.getDefense()));
-        aiLabel.setText(String.format("Enemy Hero: %s | HP %d/%d | ATK %d | DEF %d", aiHero.getName(),
-                Math.max(0, aiHero.getCurrentHealth()), aiHero.getMaxHealth(), aiHero.getAttack(), aiHero.getDefense()));
+        heroLabel.setText(String.format("Hero: %s | HP %d/%d | Shield %d/%d | ATK %d | DEF %d", playerHero.getName(),
+                Math.max(0, playerHero.getCurrentHealth()), playerHero.getMaxHealth(),
+                Math.max(0, playerHero.getCurrentEnergyShield()), playerHero.getMaxEnergyShield(),
+                playerHero.getAttack(), playerHero.getDefense()));
+        aiLabel.setText(String.format("Enemy Hero: %s | HP %d/%d | Shield %d/%d | ATK %d | DEF %d", aiHero.getName(),
+                Math.max(0, aiHero.getCurrentHealth()), aiHero.getMaxHealth(),
+                Math.max(0, aiHero.getCurrentEnergyShield()), aiHero.getMaxEnergyShield(),
+                aiHero.getAttack(), aiHero.getDefense()));
         killsLabel.setText(String.format("Kills - You: %d | Enemy: %d", playerKills, enemyKills));
         economyLabel.setText(String.format("Economy - Gold %d (+%d) | Enemy Gold %d (+%d)",
                 playerHero.getGold(), playerHero.getIncome(), aiHero.getGold(), aiHero.getIncome()));
         double seconds = Math.max(0, waveCountdown) * TICK_MILLIS / 1000.0;
         actionLabel.setText(String.format("%s Next wave in %.1f s.", lastActionMessage, seconds));
+        refreshHeroInterface();
+    }
+
+    private void refreshHeroInterface() {
+        if (playerHero == null) {
+            heroPrimaryLabel.setText("Primary Attribute: -");
+            heroStrengthLabel.setText("Strength: -");
+            heroDexterityLabel.setText("Dexterity: -");
+            heroIntelligenceLabel.setText("Intelligence: -");
+            return;
+        }
+
+        int attackSpeedPercent = (int) Math.round((playerHero.getAttackSpeedMultiplier() - 1.0) * 100.0);
+        heroPrimaryLabel.setText(String.format("Primary Attribute: %s | Damage %d | Attack Speed %+d%%",
+                playerHero.getPrimaryAttribute().getDisplayName(),
+                playerHero.getAttack(),
+                attackSpeedPercent));
+
+        heroStrengthLabel.setText(String.format("Strength %d → Max Health %d, Armor %d",
+                playerHero.getStrength(),
+                playerHero.getMaxHealth(),
+                playerHero.getDefense()));
+
+        int evasionPercent = (int) Math.round(playerHero.getEvasionChance() * 100.0);
+        heroDexterityLabel.setText(String.format("Dexterity %d → Evasion %d%%",
+                playerHero.getDexterity(),
+                evasionPercent));
+
+        int critPercent = (int) Math.round(playerHero.getCriticalChance() * 100.0);
+        heroIntelligenceLabel.setText(String.format("Intelligence %d → Crit Chance %d%%, Shield %d/%d",
+                playerHero.getIntelligence(),
+                critPercent,
+                Math.max(0, playerHero.getCurrentEnergyShield()),
+                playerHero.getMaxEnergyShield()));
     }
 
     private Hero createAiHero() {
         int roll = random.nextInt(3);
         switch (roll) {
             case 0:
-                return new Hero("Sentinel", 110, 14, 6, 180, 12);
+                return new Hero("Sentinel", 16, 9, 8, Hero.PrimaryAttribute.STRENGTH, 44, 5, 3, 180, 12);
             case 1:
-                return new Hero("Berserker", 85, 19, 4, 170, 13);
+                return new Hero("Berserker", 12, 18, 7, Hero.PrimaryAttribute.DEXTERITY, 40, 6, 2, 170, 13);
             default:
-                return new Hero("Warlock", 90, 17, 5, 190, 11);
+                return new Hero("Warlock", 9, 11, 17, Hero.PrimaryAttribute.INTELLIGENCE, 40, 7, 2, 190, 11);
         }
     }
 
@@ -729,8 +791,9 @@ public class HeroLineWarsGame extends JFrame {
         if (heroAlive) {
             UnitInstance target = findUnitInRange(enemyUnits, heroX + HERO_WIDTH / 2.0, ATTACK_RANGE);
             if (target != null && heroAttackCooldown <= 0) {
-                target.takeDamage(Math.max(1, playerHero.getAttack()));
-                heroAttackCooldown = ATTACK_COOLDOWN_TICKS;
+                int damage = Math.max(1, playerHero.rollAttackDamage(random));
+                target.takeDamage(damage);
+                heroAttackCooldown = playerHero.getAttackDelayTicks(ATTACK_COOLDOWN_TICKS);
                 if (target.isDead()) {
                     enemyUnits.remove(target);
                     playerHero.addGold(UNIT_KILL_REWARD);
@@ -743,8 +806,9 @@ public class HeroLineWarsGame extends JFrame {
         if (enemyAlive) {
             UnitInstance target = findUnitInRange(playerUnits, enemyX + HERO_WIDTH / 2.0, ATTACK_RANGE);
             if (target != null && enemyAttackCooldown <= 0) {
-                target.takeDamage(Math.max(1, aiHero.getAttack()));
-                enemyAttackCooldown = ATTACK_COOLDOWN_TICKS;
+                int damage = Math.max(1, aiHero.rollAttackDamage(random));
+                target.takeDamage(damage);
+                enemyAttackCooldown = aiHero.getAttackDelayTicks(ATTACK_COOLDOWN_TICKS);
                 if (target.isDead()) {
                     playerUnits.remove(target);
                 }
