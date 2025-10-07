@@ -1,15 +1,13 @@
-# Hero Line Wars (Java Edition)
+# Hero Line Wars (Swing Arena)
 
-This repository contains a small console game inspired by the classic Hero Line Wars custom maps from Warcraft III and StarCraft II. You control a hero on the upper lane, purchase items from the shop, and send units to attack the opposing base while defending your own.
+This project contains a lightweight real-time interpretation of the classic Hero Line Wars custom maps. It now ships with a small Swing battlefield so you can move your hero with the mouse and watch the duel unfold without relying on console prompts.
 
 ## Gameplay overview
 
-- Choose between three hero archetypes (Ranger, Knight, or Battle Mage), each with different stats.
-- Earn gold from your base income at the start of every round.
-- Purchase items to improve your hero's attack and defense.
-- Send units to the enemy lane to pressure their base and increase your income for future rounds.
-- Survive the enemy waves on your own lane. If your hero falls, the remaining units damage your base.
-- The game ends when either base falls or after 30 rounds (the higher income wins the tiebreaker).
+- Choose between three hero archetypes (Ranger, Knight, or Battle Mage), each with different stats and play styles.
+- Click anywhere on the lane to command your hero to move. They will automatically attack the opposing hero when in range.
+- Defeat the enemy hero to create openings that let you damage their base. Be careful—if you fall, the enemy will march toward yours!
+- Bases lose health when exposed; the match ends when one base is destroyed.
 
 ## Building and running
 
@@ -23,4 +21,4 @@ javac -d out $(find src -name "*.java")
 java -cp out com.example.herolinewars.HeroLineWarsGame
 ```
 
-When running the game, follow the prompts in the terminal to plan your economy, buy items, and send units every round.
+When the application launches, a hero selection dialog appears. After choosing your hero, the battle begins instantly inside the Swing window.
