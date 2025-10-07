@@ -1,16 +1,33 @@
 package com.example.herolinewars;
 
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JDialog;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JList;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTextArea;
+import javax.swing.ListSelectionModel;
+import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingUtilities;
+import javax.swing.WindowConstants;
+import java.awt.BorderLayout;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.GridLayout;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
-import java.util.Scanner;
 
 /**
- * A small console adaptation of the classic Hero Line Wars custom map.
+ * A small Swing adaptation of the classic Hero Line Wars custom map.
  */
-public class HeroLineWarsGame {
-    private final Scanner scanner = new Scanner(System.in);
+public class HeroLineWarsGame extends JFrame {
     private final Random random = new Random();
 
     private final List<Item> shopItems = List.of(
@@ -21,216 +38,263 @@ public class HeroLineWarsGame {
             new Item("Champion's Blade", 9, 0, 110, "High risk, high reward damage upgrade.")
     );
 
+    private Hero playerHero;
+    private Hero aiHero;
+    private Team playerTeam;
+    private Team aiTeam;
+    private int round;
+    private boolean planningPhase;
+
+    private final JTextArea logArea = new JTextArea();
+    private final JLabel roundLabel = new JLabel("Round: -");
+    private final JLabel baseLabel = new JLabel("Base HP - You: 0 | Enemy: 0");
+    private final JLabel heroLabel = new JLabel("Hero: -");
+    private final JLabel aiLabel = new JLabel("Enemy Hero: -");
+    private final JLabel queuedUnitsLabel = new JLabel("Queued Units: none");
+
+    private final JButton viewInventoryButton = new JButton("View Inventory");
+    private final JButton buyItemButton = new JButton("Buy Item");
+    private final JButton sendUnitsButton = new JButton("Send Units");
+    private final JButton previewWaveButton = new JButton("Preview Wave");
+    private final JButton finishPlanningButton = new JButton("Finish Planning");
+
     public static void main(String[] args) {
-        new HeroLineWarsGame().run();
+        SwingUtilities.invokeLater(() -> {
+            HeroLineWarsGame game = new HeroLineWarsGame();
+            game.setVisible(true);
+        });
     }
 
-    private void run() {
-        printIntro();
+    public HeroLineWarsGame() {
+        super("Hero Line Wars");
+        setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        setPreferredSize(new Dimension(900, 650));
+        setLayout(new BorderLayout());
 
-        Hero playerHero = chooseHero();
-        Hero aiHero = createAiHero();
+        buildInterface();
+        pack();
+        setLocationRelativeTo(null);
 
-        Team playerTeam = new Team("Player", playerHero);
-        Team aiTeam = new Team("Legion", aiHero);
-
-        int round = 0;
-        while (!playerTeam.isDefeated() && !aiTeam.isDefeated() && round < 30) {
-            round++;
-            System.out.println();
-            System.out.println("==============================");
-            System.out.println("Round " + round);
-            System.out.println("==============================");
-
-            startOfRoundIncome(playerTeam, aiTeam);
-            playerPlanningPhase(playerTeam);
-            aiPlanningPhase(aiTeam, round);
-
-            List<UnitType> playerWave = playerTeam.drainQueuedUnits();
-            List<UnitType> aiWave = aiTeam.drainQueuedUnits();
-
-            resolveWave("Player", playerWave, aiTeam);
-            resolveWave(aiTeam.getName(), aiWave, playerTeam);
-
-            printRoundSummary(playerTeam, aiTeam);
-        }
-
-        if (playerTeam.isDefeated() && aiTeam.isDefeated()) {
-            System.out.println("Both bases fell at the same time! It's a draw.");
-        } else if (aiTeam.isDefeated()) {
-            System.out.println("Congratulations! You defended your base and destroyed the opposing legion.");
-        } else if (playerTeam.isDefeated()) {
-            System.out.println("Your base was overwhelmed. Better luck next time!");
-        } else {
-            System.out.println("Time is up! The stronger economy wins...");
-            if (playerTeam.getHero().getIncome() >= aiTeam.getHero().getIncome()) {
-                System.out.println("Your team generated more income and is declared the winner!");
-            } else {
-                System.out.println("The legion amassed the greater economy. They win this time.");
-            }
-        }
+        appendLog("Welcome to Hero Line Wars (Swing Edition)!");
+        appendLog("Hold your lane, build a stronger economy than your opponent, and destroy their base!");
+        showHeroSelectionDialog();
     }
 
-    private void printIntro() {
-        System.out.println("Welcome to Hero Line Wars (Java Edition)!");
-        System.out.println("You control a single hero on the upper lane, purchase items from the shop, \n" +
-                "and send units to the opposing base on the lower lane. Every unit you send increases\n" +
-                "your income, which is paid out at the start of each round.");
-        System.out.println("Hold your lane, build a stronger economy than your opponent, and destroy their base!");
+    private void buildInterface() {
+        JPanel statusPanel = new JPanel(new GridLayout(0, 1));
+        statusPanel.add(roundLabel);
+        statusPanel.add(baseLabel);
+        statusPanel.add(heroLabel);
+        statusPanel.add(aiLabel);
+        statusPanel.add(queuedUnitsLabel);
+        add(statusPanel, BorderLayout.NORTH);
+
+        logArea.setEditable(false);
+        logArea.setLineWrap(true);
+        logArea.setWrapStyleWord(true);
+        add(new JScrollPane(logArea), BorderLayout.CENTER);
+
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
+        buttonPanel.add(viewInventoryButton);
+        buttonPanel.add(buyItemButton);
+        buttonPanel.add(sendUnitsButton);
+        buttonPanel.add(previewWaveButton);
+        buttonPanel.add(finishPlanningButton);
+        add(buttonPanel, BorderLayout.SOUTH);
+
+        viewInventoryButton.addActionListener(e -> showInventoryDialog());
+        buyItemButton.addActionListener(e -> showShopDialog());
+        sendUnitsButton.addActionListener(e -> showSendUnitsDialog());
+        previewWaveButton.addActionListener(e -> showQueuedUnitsDialog());
+        finishPlanningButton.addActionListener(e -> handleFinishPlanning());
+
+        setPlanningControlsEnabled(false);
     }
 
-    private void startOfRoundIncome(Team playerTeam, Team aiTeam) {
-        playerTeam.getHero().earnIncome();
-        aiTeam.getHero().earnIncome();
-        System.out.printf("Income received! You now have %d gold (Income: %d).%n", playerTeam.getHero().getGold(), playerTeam.getHero().getIncome());
+    private void showHeroSelectionDialog() {
+        JDialog dialog = new JDialog(this, "Choose Your Hero", true);
+        dialog.setLayout(new BorderLayout());
+
+        JTextArea description = new JTextArea();
+        description.setEditable(false);
+        description.setLineWrap(true);
+        description.setWrapStyleWord(true);
+        description.setText("Select a hero to begin the battle. Each hero offers a unique playstyle.");
+        description.setBorder(null);
+        dialog.add(description, BorderLayout.NORTH);
+
+        JPanel heroPanel = new JPanel(new GridLayout(0, 1, 10, 10));
+
+        JButton rangerButton = new JButton("Ranger - Balanced stats and reliable damage.");
+        rangerButton.addActionListener(e -> {
+            playerHero = new Hero("Ranger", 95, 16, 4, 120, 50);
+            dialog.dispose();
+            startGame();
+        });
+        heroPanel.add(rangerButton);
+
+        JButton knightButton = new JButton("Knight - Heavily armored and built to tank waves.");
+        knightButton.addActionListener(e -> {
+            playerHero = new Hero("Knight", 125, 12, 7, 120, 50);
+            dialog.dispose();
+            startGame();
+        });
+        heroPanel.add(knightButton);
+
+        JButton mageButton = new JButton("Battle Mage - Fragile but deals heavy attacks.");
+        mageButton.addActionListener(e -> {
+            playerHero = new Hero("Battle Mage", 80, 20, 3, 120, 55);
+            dialog.dispose();
+            startGame();
+        });
+        heroPanel.add(mageButton);
+
+        dialog.add(heroPanel, BorderLayout.CENTER);
+        dialog.pack();
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
     }
 
-    private Hero chooseHero() {
-        System.out.println();
-        System.out.println("Choose your hero:");
-        System.out.println("1) Ranger - Balanced stats and reliable damage.");
-        System.out.println("2) Knight - Heavily armored and built to tank waves.");
-        System.out.println("3) Battle Mage - Fragile but deals heavy attacks.");
+    private void startGame() {
+        aiHero = createAiHero();
+        playerTeam = new Team("Player", playerHero);
+        aiTeam = new Team("Legion", aiHero);
+        round = 0;
+        planningPhase = false;
 
-        while (true) {
-            int choice = readInt("Enter hero number: ", 1, 3);
-            switch (choice) {
-                case 1:
-                    return new Hero("Ranger", 95, 16, 4, 120, 50);
-                case 2:
-                    return new Hero("Knight", 125, 12, 7, 120, 50);
-                case 3:
-                    return new Hero("Battle Mage", 80, 20, 3, 120, 55);
-                default:
-                    System.out.println("Invalid option. Try again.");
-            }
-        }
+        appendLog("\nYour hero: " + playerHero.getName());
+        appendLog("Facing the opposing legion: " + aiHero.getName());
+        updateStatusLabels();
+        startNextRound();
     }
 
-    private Hero createAiHero() {
-        int roll = random.nextInt(3);
-        switch (roll) {
-            case 0:
-                System.out.println("The opposing legion fields a disciplined Sentinel.");
-                return new Hero("Sentinel", 110, 14, 6, 120, 52);
-            case 1:
-                System.out.println("The opposing legion fields a ferocious Berserker.");
-                return new Hero("Berserker", 85, 19, 4, 120, 54);
-            default:
-                System.out.println("The opposing legion fields an arcane Warlock.");
-                return new Hero("Warlock", 90, 17, 5, 120, 50);
-        }
-    }
-
-    private void playerPlanningPhase(Team playerTeam) {
-        Hero hero = playerTeam.getHero();
-        boolean planning = true;
-        while (planning) {
-            System.out.println();
-            System.out.println("--- Planning Phase ---");
-            System.out.println(hero);
-            System.out.println("1) View inventory");
-            System.out.println("2) Buy item from shop");
-            System.out.println("3) Send units to the enemy base");
-            System.out.println("4) Review next wave composition");
-            System.out.println("5) Finish planning for this round");
-
-            int choice = readInt("Choose an action: ", 1, 5);
-            switch (choice) {
-                case 1:
-                    displayInventory(hero);
-                    break;
-                case 2:
-                    buyItem(hero);
-                    break;
-                case 3:
-                    sendUnits(playerTeam);
-                    break;
-                case 4:
-                    previewWave(playerTeam);
-                    break;
-                case 5:
-                    planning = false;
-                    break;
-                default:
-                    // Should not happen
-                    break;
-            }
-        }
-    }
-
-    private void displayInventory(Hero hero) {
-        System.out.println();
-        System.out.println(hero.getName() + "'s Inventory:");
-        if (hero.getInventory().isEmpty()) {
-            System.out.println("  (empty)");
-        } else {
-            for (Item item : hero.getInventory()) {
-                System.out.println("  - " + item);
-            }
-        }
-    }
-
-    private void buyItem(Hero hero) {
-        System.out.println();
-        System.out.println("--- Shop ---");
-        for (int i = 0; i < shopItems.size(); i++) {
-            Item item = shopItems.get(i);
-            System.out.printf("%d) %s%n", i + 1, item);
-        }
-        System.out.println("0) Leave the shop");
-
-        int choice = readInt("Select an item to purchase: ", 0, shopItems.size());
-        if (choice == 0) {
+    private void startNextRound() {
+        if (playerTeam.isDefeated() || aiTeam.isDefeated()) {
             return;
         }
-        Item selected = shopItems.get(choice - 1);
-        if (hero.spendGold(selected.getCost())) {
-            hero.applyItem(selected);
-            System.out.printf("Purchased %s! New stats -> ATK: %d, DEF: %d%n", selected.getName(), hero.getAttack(), hero.getDefense());
+        round++;
+        planningPhase = true;
+        appendLog("\n==============================");
+        appendLog("Round " + round);
+        appendLog("==============================");
+
+        startOfRoundIncome();
+        updateStatusLabels();
+        updateQueuedUnitsLabel();
+        setPlanningControlsEnabled(true);
+    }
+
+    private void setPlanningControlsEnabled(boolean enabled) {
+        viewInventoryButton.setEnabled(enabled);
+        buyItemButton.setEnabled(enabled);
+        sendUnitsButton.setEnabled(enabled);
+        previewWaveButton.setEnabled(enabled);
+        finishPlanningButton.setEnabled(enabled);
+    }
+
+    private void showInventoryDialog() {
+        if (!planningPhase || playerHero == null) {
+            return;
+        }
+        List<Item> inventory = playerHero.getInventory();
+        StringBuilder builder = new StringBuilder();
+        builder.append(playerHero.getName()).append("'s Inventory:\n");
+        if (inventory.isEmpty()) {
+            builder.append("  (empty)\n");
         } else {
-            System.out.println("Not enough gold for that item.");
+            for (Item item : inventory) {
+                builder.append("  • ").append(item).append("\n");
+            }
+        }
+        JOptionPane.showMessageDialog(this, builder.toString(), "Inventory", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void showShopDialog() {
+        if (!planningPhase || playerHero == null) {
+            return;
+        }
+
+        String[] itemDescriptions = new String[shopItems.size()];
+        for (int i = 0; i < shopItems.size(); i++) {
+            Item item = shopItems.get(i);
+            itemDescriptions[i] = String.format("%s (Cost: %d, +%d ATK, +%d DEF) - %s",
+                    item.getName(), item.getCost(), item.getAttackBonus(), item.getDefenseBonus(), item.getDescription());
+        }
+
+        JList<String> list = new JList<>(itemDescriptions);
+        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        JScrollPane scrollPane = new JScrollPane(list);
+        scrollPane.setPreferredSize(new Dimension(400, 180));
+
+        int option = JOptionPane.showConfirmDialog(this, scrollPane, "Shop", JOptionPane.OK_CANCEL_OPTION);
+        if (option == JOptionPane.OK_OPTION) {
+            int index = list.getSelectedIndex();
+            if (index >= 0) {
+                Item selected = shopItems.get(index);
+                if (playerHero.spendGold(selected.getCost())) {
+                    playerHero.applyItem(selected);
+                    appendLog(String.format("Purchased %s! New stats -> ATK: %d, DEF: %d", selected.getName(),
+                            playerHero.getAttack(), playerHero.getDefense()));
+                } else {
+                    JOptionPane.showMessageDialog(this, "Not enough gold for that item.", "Insufficient Gold",
+                            JOptionPane.WARNING_MESSAGE);
+                }
+                updateStatusLabels();
+            }
         }
     }
 
-    private void sendUnits(Team team) {
-        Hero hero = team.getHero();
-        System.out.println();
-        System.out.println("--- Send Units ---");
-        UnitType[] options = UnitType.values();
-        for (int i = 0; i < options.length; i++) {
-            UnitType type = options[i];
-            System.out.printf("%d) %s - Cost: %d, HP: %d, DMG: %d, Income +%d%n   %s%n",
-                    i + 1, type.getDisplayName(), type.getCost(), type.getHealth(), type.getDamage(),
-                    type.getIncomeBonus(), type.getDescription());
+    private void showSendUnitsDialog() {
+        if (!planningPhase || playerHero == null) {
+            return;
         }
-        System.out.println("0) Finish sending units");
 
-        while (true) {
-            int choice = readInt("Select a unit to send: ", 0, options.length);
-            if (choice == 0) {
-                break;
+        JPanel panel = new JPanel(new GridLayout(0, 1, 4, 4));
+        JComboBox<UnitType> unitComboBox = new JComboBox<>(UnitType.values());
+        JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 20, 1));
+
+        panel.add(new JLabel("Unit:"));
+        panel.add(unitComboBox);
+        panel.add(new JLabel("Quantity:"));
+        panel.add(quantitySpinner);
+
+        int option = JOptionPane.showConfirmDialog(this, panel, "Send Units", JOptionPane.OK_CANCEL_OPTION);
+        if (option == JOptionPane.OK_OPTION) {
+            UnitType selected = (UnitType) unitComboBox.getSelectedItem();
+            int quantity = (int) quantitySpinner.getValue();
+            if (selected != null) {
+                queueUnits(selected, quantity);
             }
-            UnitType selected = options[choice - 1];
-            int quantity = readInt("How many " + selected.getDisplayName() + "s? ", 1, 20);
-            int totalCost = selected.getCost() * quantity;
-            if (hero.getGold() < totalCost) {
-                System.out.println("Not enough gold to send that many units.");
-                continue;
-            }
-            hero.spendGold(totalCost);
-            hero.addIncome(selected.getIncomeBonus() * quantity);
-            for (int i = 0; i < quantity; i++) {
-                team.queueUnit(selected);
-            }
-            System.out.printf("Queued %d %s for the next wave. Income is now %d.%n", quantity, selected.getDisplayName(), hero.getIncome());
         }
     }
 
-    private void previewWave(Team team) {
-        List<UnitType> queuedUnits = team.getQueuedUnitsSnapshot();
+    private void queueUnits(UnitType selected, int quantity) {
+        Hero hero = playerTeam.getHero();
+        int totalCost = selected.getCost() * quantity;
+        if (hero.getGold() < totalCost) {
+            JOptionPane.showMessageDialog(this, "Not enough gold to send that many units.",
+                    "Insufficient Gold", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        hero.spendGold(totalCost);
+        hero.addIncome(selected.getIncomeBonus() * quantity);
+        for (int i = 0; i < quantity; i++) {
+            playerTeam.queueUnit(selected);
+        }
+        appendLog(String.format("Queued %d %s for the next wave. Income is now %d.",
+                quantity, selected.getDisplayName(), hero.getIncome()));
+        updateStatusLabels();
+        updateQueuedUnitsLabel();
+    }
+
+    private void showQueuedUnitsDialog() {
+        if (!planningPhase || playerTeam == null) {
+            return;
+        }
+        List<UnitType> queuedUnits = playerTeam.getQueuedUnitsSnapshot();
         if (queuedUnits.isEmpty()) {
-            System.out.println("No units queued yet for the next wave.");
+            JOptionPane.showMessageDialog(this, "No units queued yet for the next wave.",
+                    "Queued Units", JOptionPane.INFORMATION_MESSAGE);
             return;
         }
 
@@ -238,49 +302,136 @@ public class HeroLineWarsGame {
         for (UnitType type : UnitType.values()) {
             counts.put(type, 0);
         }
-        for (UnitType queued : queuedUnits) {
-            counts.put(queued, counts.get(queued) + 1);
+        for (UnitType unit : queuedUnits) {
+            counts.put(unit, counts.get(unit) + 1);
         }
-
-        System.out.println("Units ready for the next wave:");
+        StringBuilder builder = new StringBuilder("Units ready for the next wave:\n");
         for (Map.Entry<UnitType, Integer> entry : counts.entrySet()) {
             if (entry.getValue() > 0) {
-                System.out.printf("  %s x%d%n", entry.getKey().getDisplayName(), entry.getValue());
+                builder.append("  ").append(entry.getKey().getDisplayName())
+                        .append(" x").append(entry.getValue()).append('\n');
             }
+        }
+        JOptionPane.showMessageDialog(this, builder.toString(), "Queued Units", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void handleFinishPlanning() {
+        if (!planningPhase) {
+            return;
+        }
+        planningPhase = false;
+        setPlanningControlsEnabled(false);
+
+        appendLog("\nResolving the round...");
+        aiPlanningPhase(aiTeam, round);
+
+        List<UnitType> playerWave = playerTeam.drainQueuedUnits();
+        List<UnitType> aiWave = aiTeam.drainQueuedUnits();
+        updateQueuedUnitsLabel();
+
+        resolveWave("Player", playerWave, aiTeam);
+        resolveWave(aiTeam.getName(), aiWave, playerTeam);
+
+        printRoundSummary();
+        updateStatusLabels();
+
+        if (checkForWinner()) {
+            return;
+        }
+        if (round >= 30) {
+            determineEconomicWinner();
+            return;
+        }
+        startNextRound();
+    }
+
+    private boolean checkForWinner() {
+        boolean playerDefeated = playerTeam.isDefeated();
+        boolean aiDefeated = aiTeam.isDefeated();
+
+        if (playerDefeated && aiDefeated) {
+            appendLog("Both bases fell at the same time! It's a draw.");
+            endGame("Draw");
+            return true;
+        } else if (aiDefeated) {
+            appendLog("Congratulations! You defended your base and destroyed the opposing legion.");
+            endGame("Victory");
+            return true;
+        } else if (playerDefeated) {
+            appendLog("Your base was overwhelmed. Better luck next time!");
+            endGame("Defeat");
+            return true;
+        }
+        return false;
+    }
+
+    private void determineEconomicWinner() {
+        appendLog("Time is up! The stronger economy wins...");
+        if (playerTeam.getHero().getIncome() >= aiTeam.getHero().getIncome()) {
+            appendLog("Your team generated more income and is declared the winner!");
+            endGame("Victory by economy");
+        } else {
+            appendLog("The legion amassed the greater economy. They win this time.");
+            endGame("Defeat by economy");
         }
     }
 
-    private void aiPlanningPhase(Team aiTeam, int round) {
-        Hero hero = aiTeam.getHero();
-        System.out.println();
-        System.out.println("The opposing legion is preparing its strategy...");
+    private void endGame(String result) {
+        setPlanningControlsEnabled(false);
+        JOptionPane.showMessageDialog(this, result, "Game Over", JOptionPane.INFORMATION_MESSAGE);
+    }
 
-        // Simple AI: occasionally buy an item
+    private void startOfRoundIncome() {
+        playerTeam.getHero().earnIncome();
+        aiTeam.getHero().earnIncome();
+        appendLog(String.format("Income received! You now have %d gold (Income: %d).",
+                playerTeam.getHero().getGold(), playerTeam.getHero().getIncome()));
+    }
+
+    private Hero createAiHero() {
+        int roll = random.nextInt(3);
+        switch (roll) {
+            case 0:
+                appendLog("The opposing legion fields a disciplined Sentinel.");
+                return new Hero("Sentinel", 110, 14, 6, 120, 52);
+            case 1:
+                appendLog("The opposing legion fields a ferocious Berserker.");
+                return new Hero("Berserker", 85, 19, 4, 120, 54);
+            default:
+                appendLog("The opposing legion fields an arcane Warlock.");
+                return new Hero("Warlock", 90, 17, 5, 120, 50);
+        }
+    }
+
+    private void aiPlanningPhase(Team aiTeam, int currentRound) {
+        Hero hero = aiTeam.getHero();
+        appendLog("The opposing legion is preparing its strategy...");
+
         if (hero.getGold() >= 80 && hero.getInventory().size() < 4 && random.nextBoolean()) {
             Item chosen = shopItems.get(random.nextInt(shopItems.size()));
             if (hero.spendGold(chosen.getCost())) {
                 hero.applyItem(chosen);
-                System.out.printf("The legion equips %s for their hero.%n", chosen.getName());
+                appendLog(String.format("The legion equips %s for their hero.", chosen.getName()));
             }
         }
 
         int minCost = getMinimumUnitCost();
-        int unitsToSend = Math.max(1, round / 2);
+        int unitsToSend = Math.max(1, currentRound / 2);
         while (hero.getGold() >= minCost && unitsToSend > 0) {
-            UnitType type = chooseUnitForAi(hero, round);
+            UnitType type = chooseUnitForAi(hero, currentRound);
             if (!hero.spendGold(type.getCost())) {
                 break;
             }
             aiTeam.queueUnit(type);
             hero.addIncome(type.getIncomeBonus());
             unitsToSend--;
-            System.out.printf("The legion queues a %s for the coming wave.%n", type.getDisplayName());
+            appendLog(String.format("The legion queues a %s for the coming wave.", type.getDisplayName()));
         }
     }
 
-    private UnitType chooseUnitForAi(Hero hero, int round) {
+    private UnitType chooseUnitForAi(Hero hero, int currentRound) {
         UnitType[] types = UnitType.values();
-        if (round < 4) {
+        if (currentRound < 4) {
             return types[random.nextInt(Math.min(types.length, 3))];
         }
         if (hero.getIncome() > 120) {
@@ -300,7 +451,7 @@ public class HeroLineWarsGame {
     private void resolveWave(String attackerName, List<UnitType> wave, Team defenderTeam) {
         Hero defender = defenderTeam.getHero();
         if (wave.isEmpty()) {
-            System.out.printf("%s sends no units this round.%n", attackerName);
+            appendLog(String.format("%s sends no units this round.", attackerName));
             return;
         }
 
@@ -339,40 +490,74 @@ public class HeroLineWarsGame {
                 baseDamage += Math.max(6, remaining.getDamage());
             }
             defenderTeam.damageBase(baseDamage);
-            System.out.printf("%s's hero was overwhelmed! The base takes %d damage (Base HP: %d).%n",
-                    defenderTeam.getName(), baseDamage, Math.max(0, defenderTeam.getBaseHealth()));
+            appendLog(String.format("%s's hero was overwhelmed! The base takes %d damage (Base HP: %d).",
+                    defenderTeam.getName(), baseDamage, Math.max(0, defenderTeam.getBaseHealth())));
         } else {
             int survivingHealth = defender.getCurrentHealth();
-            System.out.printf("%s defended the wave with %d HP remaining and earned %d bonus gold.%n",
-                    defender.getName(), survivingHealth, goldEarned);
+            appendLog(String.format("%s defended the wave with %d HP remaining and earned %d bonus gold.",
+                    defender.getName(), survivingHealth, goldEarned));
             defender.addGold(goldEarned);
         }
         defender.resetHealth();
     }
 
-    private void printRoundSummary(Team playerTeam, Team aiTeam) {
-        System.out.println();
-        System.out.println("--- Round Summary ---");
-        System.out.printf("Your base HP: %d%n", Math.max(0, playerTeam.getBaseHealth()));
-        System.out.printf("Enemy base HP: %d%n", Math.max(0, aiTeam.getBaseHealth()));
-        System.out.printf("Your hero income: %d, Gold: %d%n", playerTeam.getHero().getIncome(), playerTeam.getHero().getGold());
-        System.out.printf("Enemy hero income: %d%n", aiTeam.getHero().getIncome());
+    private void printRoundSummary() {
+        appendLog("\n--- Round Summary ---");
+        appendLog(String.format("Your base HP: %d", Math.max(0, playerTeam.getBaseHealth())));
+        appendLog(String.format("Enemy base HP: %d", Math.max(0, aiTeam.getBaseHealth())));
+        appendLog(String.format("Your hero income: %d, Gold: %d", playerTeam.getHero().getIncome(),
+                playerTeam.getHero().getGold()));
+        appendLog(String.format("Enemy hero income: %d", aiTeam.getHero().getIncome()));
     }
 
-    private int readInt(String prompt, int min, int max) {
-        while (true) {
-            System.out.print(prompt);
-            String line = scanner.nextLine();
-            try {
-                int value = Integer.parseInt(line.trim());
-                if (value < min || value > max) {
-                    System.out.printf("Please enter a value between %d and %d.%n", min, max);
-                } else {
-                    return value;
+    private void updateStatusLabels() {
+        roundLabel.setText("Round: " + round);
+        if (playerTeam != null && aiTeam != null) {
+            baseLabel.setText(String.format("Base HP - You: %d | Enemy: %d",
+                    Math.max(0, playerTeam.getBaseHealth()), Math.max(0, aiTeam.getBaseHealth())));
+            Hero hero = playerTeam.getHero();
+            heroLabel.setText(String.format("Hero: %s | ATK %d | DEF %d | Gold %d | Income %d",
+                    hero.getName(), hero.getAttack(), hero.getDefense(), hero.getGold(), hero.getIncome()));
+            Hero enemyHero = aiTeam.getHero();
+            aiLabel.setText(String.format("Enemy Hero: %s | ATK %d | DEF %d | Gold %d | Income %d",
+                    enemyHero.getName(), enemyHero.getAttack(), enemyHero.getDefense(), enemyHero.getGold(),
+                    enemyHero.getIncome()));
+        }
+    }
+
+    private void updateQueuedUnitsLabel() {
+        if (playerTeam == null) {
+            queuedUnitsLabel.setText("Queued Units: none");
+            return;
+        }
+        List<UnitType> queued = playerTeam.getQueuedUnitsSnapshot();
+        if (queued.isEmpty()) {
+            queuedUnitsLabel.setText("Queued Units: none");
+            return;
+        }
+        Map<UnitType, Integer> counts = new EnumMap<>(UnitType.class);
+        for (UnitType type : UnitType.values()) {
+            counts.put(type, 0);
+        }
+        for (UnitType unit : queued) {
+            counts.put(unit, counts.get(unit) + 1);
+        }
+        StringBuilder builder = new StringBuilder("Queued Units: ");
+        boolean first = true;
+        for (Map.Entry<UnitType, Integer> entry : counts.entrySet()) {
+            if (entry.getValue() > 0) {
+                if (!first) {
+                    builder.append(", ");
                 }
-            } catch (NumberFormatException ex) {
-                System.out.println("Please enter a valid number.");
+                builder.append(entry.getKey().getDisplayName()).append(" x").append(entry.getValue());
+                first = false;
             }
         }
+        queuedUnitsLabel.setText(builder.toString());
+    }
+
+    private void appendLog(String text) {
+        logArea.append(text + "\n");
+        logArea.setCaretPosition(logArea.getDocument().getLength());
     }
 }
