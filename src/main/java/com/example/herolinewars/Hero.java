@@ -31,6 +31,8 @@ public class Hero {
     private static final int SECONDARY_ATTRIBUTE_LEVEL_GAIN = 1;
     private static final Random RANDOM = new Random();
 
+    private static final int MAX_RINGS = 2;
+
     private final String name;
     private final PrimaryAttribute primaryAttribute;
     private final List<Item> inventory = new ArrayList<>();
@@ -151,6 +153,10 @@ public class Hero {
         return defense;
     }
 
+    public int getMaxRings() {
+        return MAX_RINGS;
+    }
+
     public double getAttackSpeedMultiplier() {
         return 1.0 + getDexterity() * ATTACK_SPEED_PER_DEX;
     }
@@ -210,6 +216,9 @@ public class Hero {
 
     public boolean applyItem(Item item) {
         Item.EquipmentSlot slot = item.getSlot();
+        if (slot == Item.EquipmentSlot.RING && getEquippedCount(Item.EquipmentSlot.RING) >= MAX_RINGS) {
+            return false;
+        }
         if (slot != null && slot.isUnique()) {
             Item replaced = equippedUniqueItems.put(slot, item);
             if (replaced != null) {
@@ -231,6 +240,35 @@ public class Hero {
         return true;
     }
 
+    public int getEquippedCount(Item.EquipmentSlot slot) {
+        if (slot == null) {
+            return 0;
+        }
+        int count = 0;
+        for (Item item : inventory) {
+            if (slot.equals(item.getSlot())) {
+                count++;
+            }
+        }
+        return count;
+    }
+
+    public Map<Item.EquipmentSlot, List<Item>> getEquippedItemsBySlot() {
+        Map<Item.EquipmentSlot, List<Item>> grouped = new EnumMap<>(Item.EquipmentSlot.class);
+        for (Item item : inventory) {
+            Item.EquipmentSlot slot = item.getSlot();
+            if (slot == null) {
+                continue;
+            }
+            grouped.computeIfAbsent(slot, key -> new ArrayList<>()).add(item);
+        }
+        Map<Item.EquipmentSlot, List<Item>> immutable = new EnumMap<>(Item.EquipmentSlot.class);
+        for (Map.Entry<Item.EquipmentSlot, List<Item>> entry : grouped.entrySet()) {
+            immutable.put(entry.getKey(), Collections.unmodifiableList(entry.getValue()));
+        }
+        return Collections.unmodifiableMap(immutable);
+    }
+
     public Item getEquippedItem(Item.EquipmentSlot slot) {
         if (slot == null || !slot.isUnique()) {
             return null;
@@ -240,6 +278,29 @@ public class Hero {
 
     public List<Item> getInventory() {
         return Collections.unmodifiableList(inventory);
+    }
+
+    public boolean upgradeAttribute(PrimaryAttribute attribute, int cost) {
+        if (attribute == null || cost < 0 || !spendGold(cost)) {
+            return false;
+        }
+        switch (attribute) {
+            case STRENGTH:
+                strength++;
+                break;
+            case DEXTERITY:
+                dexterity++;
+                break;
+            case INTELLIGENCE:
+                intelligence++;
+                break;
+            default:
+                break;
+        }
+        recalculateStats();
+        currentHealth = maxHealth;
+        currentShield = getMaxEnergyShield();
+        return true;
     }
 
     public boolean takeDamage(int amount) {

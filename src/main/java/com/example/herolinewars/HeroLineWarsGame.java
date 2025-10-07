@@ -8,6 +8,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.JTextArea;
 import javax.swing.Timer;
 import javax.swing.WindowConstants;
 import java.awt.BasicStroke;
@@ -29,14 +30,16 @@ import java.util.Random;
  * A lightweight real-time version of Hero Line Wars where the action happens on the lane.
  */
 public class HeroLineWarsGame extends JFrame {
-    private static final int PANEL_WIDTH = 900;
-    private static final int PANEL_HEIGHT = 440;
+    private static final int PANEL_WIDTH = 1120;
+    private static final int PANEL_HEIGHT = 560;
     private static final int HERO_WIDTH = 48;
     private static final int BASE_WIDTH = 80;
-    private static final int BASE_HEIGHT = 190;
     private static final int BASE_MARGIN = 32;
-    private static final int LANE_MARGIN = 20;
-    private static final int LANE_GAP = 40;
+    private static final int LANE_MARGIN = 30;
+    private static final int LANE_GAP = 80;
+    private static final int LANES_PER_SIDE = 2;
+    private static final int INTRA_LANE_GAP = 24;
+    private static final int LANE_CONNECTOR_WIDTH = 140;
     private static final double HERO_SPEED = 4.5;
     private static final double ENEMY_SPEED = 3.4;
     private static final int ATTACK_COOLDOWN_TICKS = 20;
@@ -50,6 +53,7 @@ public class HeroLineWarsGame extends JFrame {
     private static final int HERO_VERTICAL_MARGIN = 14;
     private static final int UNIT_VERTICAL_MARGIN = 8;
     private static final int UNIT_SIZE = 28;
+    private static final int ATTRIBUTE_UPGRADE_COST = 120;
     private static final int UNIT_ATTACK_COOLDOWN_TICKS = 24;
     private static final int UNIT_BASE_ATTACK_COOLDOWN_TICKS = 30;
     private static final int UNIT_KILL_REWARD = 6;
@@ -103,6 +107,10 @@ public class HeroLineWarsGame extends JFrame {
     private final JLabel heroCombatLabel = new JLabel();
     private final JLabel heroProgressLabel = new JLabel();
     private final JLabel heroResourceLabel = new JLabel();
+    private final JLabel upgradeSummaryLabel = new JLabel("Invest gold to train attributes.");
+    private final JButton upgradeStrengthButton = new JButton();
+    private final JButton upgradeDexterityButton = new JButton();
+    private final JButton upgradeIntelligenceButton = new JButton();
 
     private final BattlefieldPanel battlefieldPanel = new BattlefieldPanel();
     private Timer gameTimer;
@@ -135,6 +143,8 @@ public class HeroLineWarsGame extends JFrame {
     private final java.util.List<UnitInstance> playerUnits = new java.util.ArrayList<>();
     private final java.util.List<UnitInstance> enemyUnits = new java.util.ArrayList<>();
     private boolean paused;
+    private int nextPlayerLaneIndex;
+    private int nextEnemyLaneIndex;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
@@ -186,6 +196,99 @@ public class HeroLineWarsGame extends JFrame {
         dialog.setVisible(true);
     }
 
+    private void openInventoryDialog() {
+        if (playerHero == null) {
+            return;
+        }
+        JDialog dialog = new JDialog(this, "Hero Inventory", true);
+        dialog.setLayout(new BorderLayout());
+
+        JLabel header = new JLabel(String.format("%s's Equipment", playerHero.getName()), SwingConstants.CENTER);
+        header.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        header.setFont(header.getFont().deriveFont(Font.BOLD, 16f));
+        dialog.add(header, BorderLayout.NORTH);
+
+        JPanel content = new JPanel(new BorderLayout());
+        JPanel equipmentGrid = new JPanel(new GridLayout(0, 2, 8, 6));
+        equipmentGrid.setBorder(javax.swing.BorderFactory.createTitledBorder("Equipped Gear"));
+
+        java.util.Map<Item.EquipmentSlot, java.util.List<Item>> equipped = playerHero.getEquippedItemsBySlot();
+        for (Item.EquipmentSlot slot : Item.EquipmentSlot.values()) {
+            StringBuilder slotLabel = new StringBuilder(slot.getDisplayName());
+            if (slot == Item.EquipmentSlot.RING) {
+                slotLabel.append(String.format(" (%d/%d)", playerHero.getEquippedCount(Item.EquipmentSlot.RING),
+                        playerHero.getMaxRings()));
+            }
+            equipmentGrid.add(new JLabel(slotLabel + ":"));
+            java.util.List<Item> slotItems = equipped.get(slot);
+            String text;
+            if (slotItems == null || slotItems.isEmpty()) {
+                text = "Empty";
+            } else {
+                StringBuilder builder = new StringBuilder();
+                for (int i = 0; i < slotItems.size(); i++) {
+                    if (i > 0) {
+                        builder.append(", ");
+                    }
+                    builder.append(slotItems.get(i).getName());
+                }
+                text = builder.toString();
+            }
+            equipmentGrid.add(new JLabel(text));
+        }
+        content.add(equipmentGrid, BorderLayout.NORTH);
+
+        java.util.List<Item> slotless = new java.util.ArrayList<>();
+        for (Item item : playerHero.getInventory()) {
+            if (item.getSlot() == null) {
+                slotless.add(item);
+            }
+        }
+        if (!slotless.isEmpty()) {
+            JPanel relicPanel = new JPanel(new BorderLayout());
+            relicPanel.setBorder(javax.swing.BorderFactory.createTitledBorder("Relics"));
+            JTextArea relicArea = new JTextArea();
+            relicArea.setEditable(false);
+            relicArea.setLineWrap(true);
+            relicArea.setWrapStyleWord(true);
+            StringBuilder builder = new StringBuilder();
+            for (Item item : slotless) {
+                if (builder.length() > 0) {
+                    builder.append('\n');
+                }
+                builder.append(item.getName()).append(" - ").append(item.getDescription());
+            }
+            relicArea.setText(builder.toString());
+            relicArea.setBackground(new Color(248, 248, 248));
+            relicPanel.add(new javax.swing.JScrollPane(relicArea), BorderLayout.CENTER);
+            content.add(relicPanel, BorderLayout.CENTER);
+        }
+
+        dialog.add(new javax.swing.JScrollPane(content), BorderLayout.CENTER);
+
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(e -> dialog.dispose());
+        JPanel footer = new JPanel();
+        footer.add(closeButton);
+        dialog.add(footer, BorderLayout.SOUTH);
+
+        dialog.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                battlefieldPanel.requestFocusInWindow();
+            }
+
+            @Override
+            public void windowClosing(WindowEvent e) {
+                battlefieldPanel.requestFocusInWindow();
+            }
+        });
+
+        dialog.setSize(new Dimension(420, 420));
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
     private String formatItemLabel(Item item) {
         java.util.List<String> stats = new java.util.ArrayList<>();
         if (item.getAttackBonus() != 0) {
@@ -217,6 +320,15 @@ public class HeroLineWarsGame extends JFrame {
             return;
         }
         Item.EquipmentSlot slot = item.getSlot();
+        if (slot == Item.EquipmentSlot.RING
+                && playerHero.getEquippedCount(Item.EquipmentSlot.RING) >= playerHero.getMaxRings()) {
+            messageLabel.setText(String.format("Ring slots are full (%d/%d).", playerHero.getEquippedCount(Item.EquipmentSlot.RING),
+                    playerHero.getMaxRings()));
+            lastActionMessage = "Ring slots are already filled.";
+            refreshHud();
+            battlefieldPanel.repaint();
+            return;
+        }
         Item previous = playerHero.getEquippedItem(slot);
 
         if (!playerHero.spendGold(item.getCost())) {
@@ -318,6 +430,8 @@ public class HeroLineWarsGame extends JFrame {
         enemyUnits.clear();
         playerTeam = null;
         enemyTeam = null;
+        nextPlayerLaneIndex = 0;
+        nextEnemyLaneIndex = 0;
         playerHero = null;
         aiHero = null;
         playerBaseHealth = 1000;
@@ -368,7 +482,7 @@ public class HeroLineWarsGame extends JFrame {
         super("Hero Line Wars");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
-        setPreferredSize(new Dimension(960, 640));
+        setPreferredSize(new Dimension(1180, 760));
 
         buildInterface();
         pack();
@@ -408,10 +522,13 @@ public class HeroLineWarsGame extends JFrame {
         commandPanel.add(unitButtonPanel, BorderLayout.CENTER);
 
         JPanel utilityPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT));
+        JButton inventoryButton = new JButton("Inventory");
+        inventoryButton.addActionListener(e -> openInventoryDialog());
         JButton shopButton = new JButton("Open Shop");
         shopButton.addActionListener(e -> openShopDialog());
         JButton pauseButton = new JButton("Pause");
         pauseButton.addActionListener(e -> openPauseMenu());
+        utilityPanel.add(inventoryButton);
         utilityPanel.add(shopButton);
         utilityPanel.add(pauseButton);
         utilityPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 10, 10, 10));
@@ -439,14 +556,66 @@ public class HeroLineWarsGame extends JFrame {
         heroCombatLabel.setForeground(new Color(200, 220, 255));
         heroProgressLabel.setForeground(new Color(200, 220, 255));
         heroResourceLabel.setForeground(new Color(200, 220, 255));
+        upgradeSummaryLabel.setForeground(new Color(210, 220, 255));
+
+        configureUpgradeButton(upgradeStrengthButton, "Strength", Hero.PrimaryAttribute.STRENGTH);
+        configureUpgradeButton(upgradeDexterityButton, "Dexterity", Hero.PrimaryAttribute.DEXTERITY);
+        configureUpgradeButton(upgradeIntelligenceButton, "Intelligence", Hero.PrimaryAttribute.INTELLIGENCE);
 
         panel.add(heroSummaryLabel);
         panel.add(heroAttributesLabel);
         panel.add(heroCombatLabel);
         panel.add(heroProgressLabel);
         panel.add(heroResourceLabel);
+        JPanel upgradePanel = new JPanel(new GridLayout(0, 1, 4, 4));
+        upgradePanel.setOpaque(false);
+        upgradePanel.add(upgradeSummaryLabel);
+        JPanel upgradeButtonsRow = new JPanel(new GridLayout(1, 0, 6, 6));
+        upgradeButtonsRow.setOpaque(false);
+        upgradeButtonsRow.add(upgradeStrengthButton);
+        upgradeButtonsRow.add(upgradeDexterityButton);
+        upgradeButtonsRow.add(upgradeIntelligenceButton);
+        upgradePanel.add(upgradeButtonsRow);
+        panel.add(upgradePanel);
         panel.setOpaque(true);
+        updateUpgradeButtons();
         return panel;
+    }
+
+    private void configureUpgradeButton(JButton button, String attributeName, Hero.PrimaryAttribute attribute) {
+        button.setFocusPainted(false);
+        button.setBackground(new Color(36, 46, 60));
+        button.setForeground(Color.WHITE);
+        button.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 10, 6, 10));
+        button.setToolTipText(String.format("Spend %d gold to increase %s by 1.", ATTRIBUTE_UPGRADE_COST,
+                attributeName.toLowerCase()));
+        button.addActionListener(e -> attemptAttributeUpgrade(attribute, attributeName));
+    }
+
+    private void updateUpgradeButtons() {
+        if (playerHero == null) {
+            upgradeSummaryLabel.setText("Invest gold to train attributes.");
+            upgradeStrengthButton.setText(String.format("Strength +1 (%dG)", ATTRIBUTE_UPGRADE_COST));
+            upgradeDexterityButton.setText(String.format("Dexterity +1 (%dG)", ATTRIBUTE_UPGRADE_COST));
+            upgradeIntelligenceButton.setText(String.format("Intelligence +1 (%dG)", ATTRIBUTE_UPGRADE_COST));
+            upgradeStrengthButton.setEnabled(false);
+            upgradeDexterityButton.setEnabled(false);
+            upgradeIntelligenceButton.setEnabled(false);
+            return;
+        }
+
+        upgradeSummaryLabel.setText(String.format("Spend %d gold to gain +1 attribute point.", ATTRIBUTE_UPGRADE_COST));
+        updateUpgradeButton(upgradeStrengthButton, "Strength", playerHero.getStrength());
+        updateUpgradeButton(upgradeDexterityButton, "Dexterity", playerHero.getDexterity());
+        updateUpgradeButton(upgradeIntelligenceButton, "Intelligence", playerHero.getIntelligence());
+    }
+
+    private void updateUpgradeButton(JButton button, String attributeName, int currentValue) {
+        button.setText(String.format("%s %d (+1) - %dG", attributeName, currentValue, ATTRIBUTE_UPGRADE_COST));
+        boolean affordable = playerHero != null && playerHero.getGold() >= ATTRIBUTE_UPGRADE_COST;
+        button.setEnabled(affordable);
+        button.setToolTipText(String.format("Spend %d gold to increase %s by 1 (current %d).", ATTRIBUTE_UPGRADE_COST,
+                attributeName.toLowerCase(), currentValue));
     }
 
     private void showHeroSelectionDialog() {
@@ -511,6 +680,8 @@ public class HeroLineWarsGame extends JFrame {
         waveCountdown = WAVE_INTERVAL_TICKS;
         playerUnits.clear();
         enemyUnits.clear();
+        nextPlayerLaneIndex = 0;
+        nextEnemyLaneIndex = 0;
         lastActionMessage = "Battle underway. Send units to pressure the enemy!";
         paused = false;
 
@@ -785,6 +956,7 @@ public class HeroLineWarsGame extends JFrame {
             heroCombatLabel.setText("");
             heroProgressLabel.setText("");
             heroResourceLabel.setText("");
+            updateUpgradeButtons();
             return;
         }
 
@@ -804,6 +976,7 @@ public class HeroLineWarsGame extends JFrame {
                 Math.max(0, playerHero.getCurrentHealth()), playerHero.getMaxHealth(),
                 playerHero.getCurrentShield(), playerHero.getMaxEnergyShield(),
                 playerHero.getDefense()));
+        updateUpgradeButtons();
     }
 
     private void updateQueueLabel() {
@@ -836,14 +1009,51 @@ public class HeroLineWarsGame extends JFrame {
             inventoryLabel.setText("Inventory: None");
             return;
         }
-        StringBuilder builder = new StringBuilder();
-        for (int i = 0; i < items.size(); i++) {
-            if (i > 0) {
-                builder.append(", ");
+        java.util.Map<Item.EquipmentSlot, java.util.List<Item>> equipped = playerHero.getEquippedItemsBySlot();
+        StringBuilder builder = new StringBuilder("Inventory: ");
+        boolean appended = false;
+        for (Item.EquipmentSlot slot : Item.EquipmentSlot.values()) {
+            if (appended) {
+                builder.append(" | ");
             }
-            builder.append(items.get(i).getName());
+            appended = true;
+            builder.append(slot.getDisplayName());
+            if (slot == Item.EquipmentSlot.RING) {
+                builder.append(String.format(" (%d/%d)", playerHero.getEquippedCount(Item.EquipmentSlot.RING),
+                        playerHero.getMaxRings()));
+            }
+            java.util.List<Item> slotItems = equipped.get(slot);
+            if (slotItems == null || slotItems.isEmpty()) {
+                builder.append(": Empty");
+            } else {
+                builder.append(": ");
+                for (int i = 0; i < slotItems.size(); i++) {
+                    if (i > 0) {
+                        builder.append(", ");
+                    }
+                    builder.append(slotItems.get(i).getName());
+                }
+            }
         }
-        inventoryLabel.setText("Inventory: " + builder);
+        java.util.List<Item> slotless = new java.util.ArrayList<>();
+        for (Item item : items) {
+            if (item.getSlot() == null) {
+                slotless.add(item);
+            }
+        }
+        if (!slotless.isEmpty()) {
+            if (appended) {
+                builder.append(" | ");
+            }
+            builder.append("Relics: ");
+            for (int i = 0; i < slotless.size(); i++) {
+                if (i > 0) {
+                    builder.append(", ");
+                }
+                builder.append(slotless.get(i).getName());
+            }
+        }
+        inventoryLabel.setText(builder.toString());
     }
 
     private Hero createAiHero() {
@@ -887,15 +1097,15 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private double getEnemySpawnX() {
-        return getMovementLeftLimit() + 40;
+        return getMovementRightLimit() - 40;
     }
 
     private double getPlayerSpawnY() {
-        return getPlayerLaneCenterY() - HERO_WIDTH / 2.0;
+        return getPlayerClusterCenterY() - HERO_WIDTH / 2.0;
     }
 
     private double getEnemySpawnY() {
-        return getEnemyLaneCenterY() - HERO_WIDTH / 2.0;
+        return getEnemyClusterCenterY() - HERO_WIDTH / 2.0;
     }
 
     private double getMovementLeftLimit() {
@@ -916,67 +1126,114 @@ public class HeroLineWarsGame extends JFrame {
         if (height <= 0) {
             height = battlefieldPanel.getPreferredSize().height;
         }
-        int available = height - 2 * LANE_MARGIN - LANE_GAP;
-        if (available < 200) {
-            available = 200;
+        int laneCount = LANES_PER_SIDE * 2;
+        int gapTotal = 2 * LANE_MARGIN + LANE_GAP + (LANES_PER_SIDE - 1) * INTRA_LANE_GAP * 2;
+        int available = height - gapTotal;
+        int minimum = laneCount * 80;
+        if (available < minimum) {
+            available = minimum;
         }
-        return available / 2;
+        return Math.max(60, available / laneCount);
     }
 
-    private int getPlayerLaneTop() {
+    private int getClusterHeight() {
+        return LANES_PER_SIDE * getLaneHeight() + (LANES_PER_SIDE - 1) * INTRA_LANE_GAP;
+    }
+
+    private int getPlayerClusterTop() {
         return LANE_MARGIN;
     }
 
+    private int getPlayerClusterBottom() {
+        return getPlayerClusterTop() + getClusterHeight();
+    }
+
+    private int getEnemyClusterTop() {
+        return getPlayerClusterBottom() + LANE_GAP;
+    }
+
+    private int getEnemyClusterBottom() {
+        return getEnemyClusterTop() + getClusterHeight();
+    }
+
+    private int getPlayerLaneTop() {
+        return getPlayerLaneTop(0);
+    }
+
     private int getEnemyLaneTop() {
-        return getPlayerLaneTop() + getLaneHeight() + LANE_GAP;
+        return getEnemyLaneTop(0);
+    }
+
+    private int getPlayerLaneTop(int laneIndex) {
+        return getPlayerClusterTop() + laneIndex * (getLaneHeight() + INTRA_LANE_GAP);
+    }
+
+    private int getEnemyLaneTop(int laneIndex) {
+        return getEnemyClusterTop() + laneIndex * (getLaneHeight() + INTRA_LANE_GAP);
     }
 
     private double getPlayerLaneCenterY() {
-        return getPlayerLaneTop() + getLaneHeight() / 2.0;
+        return getPlayerClusterCenterY();
     }
 
     private double getEnemyLaneCenterY() {
-        return getEnemyLaneTop() + getLaneHeight() / 2.0;
+        return getEnemyClusterCenterY();
+    }
+
+    private double getPlayerLaneCenterY(int laneIndex) {
+        return getPlayerLaneTop(laneIndex) + getLaneHeight() / 2.0;
+    }
+
+    private double getEnemyLaneCenterY(int laneIndex) {
+        return getEnemyLaneTop(laneIndex) + getLaneHeight() / 2.0;
+    }
+
+    private double getPlayerClusterCenterY() {
+        return getPlayerClusterTop() + getClusterHeight() / 2.0;
+    }
+
+    private double getEnemyClusterCenterY() {
+        return getEnemyClusterTop() + getClusterHeight() / 2.0;
     }
 
     private double getPlayerHeroTopLimit() {
-        return getPlayerLaneTop() + HERO_VERTICAL_MARGIN;
+        return getPlayerClusterTop() + HERO_VERTICAL_MARGIN;
     }
 
     private double getPlayerHeroBottomLimit() {
-        return getPlayerLaneTop() + getLaneHeight() - HERO_WIDTH - HERO_VERTICAL_MARGIN;
+        return getPlayerClusterBottom() - HERO_WIDTH - HERO_VERTICAL_MARGIN;
     }
 
     private double getEnemyHeroTopLimit() {
-        return getEnemyLaneTop() + HERO_VERTICAL_MARGIN;
+        return getEnemyClusterTop() + HERO_VERTICAL_MARGIN;
     }
 
     private double getEnemyHeroBottomLimit() {
-        return getEnemyLaneTop() + getLaneHeight() - HERO_WIDTH - HERO_VERTICAL_MARGIN;
+        return getEnemyClusterBottom() - HERO_WIDTH - HERO_VERTICAL_MARGIN;
     }
 
     private int getPlayerBaseTop() {
-        return getPlayerLaneTop() + 20;
+        return getPlayerClusterTop() + 20;
     }
 
     private int getPlayerBaseBottom() {
-        return getPlayerBaseTop() + getLaneHeight() - 40;
+        return getPlayerClusterBottom() - 20;
     }
 
     private int getEnemyBaseTop() {
-        return getEnemyLaneTop() + 20;
+        return getEnemyClusterTop() + 20;
     }
 
     private int getEnemyBaseBottom() {
-        return getEnemyBaseTop() + getLaneHeight() - 40;
+        return getEnemyClusterBottom() - 20;
     }
 
     private double getPlayerBaseCenterY() {
-        return getPlayerLaneTop() + getLaneHeight() / 2.0;
+        return getPlayerClusterCenterY();
     }
 
     private double getEnemyBaseCenterY() {
-        return getEnemyLaneTop() + getLaneHeight() / 2.0;
+        return getEnemyClusterCenterY();
     }
 
     private double clampHorizontalTarget(double value) {
@@ -1169,14 +1426,22 @@ public class HeroLineWarsGame extends JFrame {
                 width = getPreferredSize().width;
             }
             int laneHeight = getLaneHeight();
-            int playerLaneTop = getPlayerLaneTop();
-            int enemyLaneTop = getEnemyLaneTop();
+            int clusterHeight = getClusterHeight();
+            int playerClusterTop = getPlayerClusterTop();
+            int enemyClusterTop = getEnemyClusterTop();
 
-            drawLaneSurface(g2, width, playerLaneTop, laneHeight);
-            drawLaneSurface(g2, width, enemyLaneTop, laneHeight);
+            for (int lane = 0; lane < LANES_PER_SIDE; lane++) {
+                drawLaneSurface(g2, width, getPlayerLaneTop(lane), laneHeight);
+            }
+            for (int lane = 0; lane < LANES_PER_SIDE; lane++) {
+                drawLaneSurface(g2, width, getEnemyLaneTop(lane), laneHeight);
+            }
 
-            drawBase(g2, getPlayerBaseX(), playerLaneTop, laneHeight, new Color(66, 135, 245));
-            drawBase(g2, getEnemyBaseX(), playerLaneTop, laneHeight, new Color(200, 70, 70));
+            drawLaneConnector(g2, getPlayerBaseX() + BASE_WIDTH, playerClusterTop, clusterHeight);
+            drawLaneConnector(g2, getEnemyBaseX() - LANE_CONNECTOR_WIDTH, enemyClusterTop, clusterHeight);
+
+            drawBase(g2, getPlayerBaseX(), playerClusterTop, clusterHeight, new Color(66, 135, 245));
+            drawBase(g2, getEnemyBaseX(), enemyClusterTop, clusterHeight, new Color(200, 70, 70));
             drawSpawnZone(g2, getPlayerSpawnX() + HERO_WIDTH / 2.0, getPlayerSpawnY() + HERO_WIDTH / 2.0,
                     new Color(80, 190, 90));
             for (UnitInstance unit : enemyUnits) {
@@ -1195,8 +1460,6 @@ public class HeroLineWarsGame extends JFrame {
                 }
             }
 
-            drawBase(g2, getPlayerBaseX(), enemyLaneTop, laneHeight, new Color(66, 135, 245));
-            drawBase(g2, getEnemyBaseX(), enemyLaneTop, laneHeight, new Color(200, 70, 70));
             drawSpawnZone(g2, getEnemySpawnX() + HERO_WIDTH / 2.0, getEnemySpawnY() + HERO_WIDTH / 2.0,
                     new Color(80, 190, 90));
             for (UnitInstance unit : playerUnits) {
@@ -1232,15 +1495,20 @@ public class HeroLineWarsGame extends JFrame {
             }
         }
 
-        private boolean isInPlayerLane(int y) {
-            int laneTop = getPlayerLaneTop();
-            int laneHeight = getLaneHeight();
-            return y >= laneTop && y <= laneTop + laneHeight;
+        private void drawLaneConnector(Graphics2D g2, int connectorLeftX, int clusterTop, int clusterHeight) {
+            int connectorY = clusterTop + 18;
+            int connectorHeight = Math.max(20, clusterHeight - 36);
+            g2.setColor(new Color(38, 54, 40));
+            g2.fillRoundRect(connectorLeftX, connectorY, LANE_CONNECTOR_WIDTH, connectorHeight, 20, 20);
+            g2.setColor(new Color(28, 42, 32));
+            for (int x = connectorLeftX; x < connectorLeftX + LANE_CONNECTOR_WIDTH; x += 24) {
+                g2.fillRect(x, connectorY + connectorHeight / 2 - 2, 14, 4);
+            }
         }
 
-        private void drawBase(Graphics2D g2, int baseX, int laneTop, int laneHeight, Color color) {
-            int baseY = laneTop + 20;
-            int baseHeight = laneHeight - 40;
+        private void drawBase(Graphics2D g2, int baseX, int clusterTop, int clusterHeight, Color color) {
+            int baseY = clusterTop + 20;
+            int baseHeight = clusterHeight - 40;
             g2.setColor(color);
             g2.fillRoundRect(baseX - 6, baseY - 6, BASE_WIDTH + 12, baseHeight + 12, 18, 18);
             g2.setColor(new Color(90, 90, 95));
@@ -1429,6 +1697,21 @@ public class HeroLineWarsGame extends JFrame {
         battlefieldPanel.repaint();
     }
 
+    private void attemptAttributeUpgrade(Hero.PrimaryAttribute attribute, String attributeName) {
+        if (gameOver || playerHero == null) {
+            return;
+        }
+        boolean upgraded = playerHero.upgradeAttribute(attribute, ATTRIBUTE_UPGRADE_COST);
+        if (upgraded) {
+            lastActionMessage = String.format("Invested %d gold to train %s.", ATTRIBUTE_UPGRADE_COST,
+                    attributeName.toLowerCase());
+        } else {
+            lastActionMessage = String.format("Not enough gold to train %s.", attributeName.toLowerCase());
+        }
+        refreshHud();
+        battlefieldPanel.repaint();
+    }
+
     private void launchNextWave() {
         if (gameOver || playerTeam == null || enemyTeam == null) {
             return;
@@ -1436,12 +1719,18 @@ public class HeroLineWarsGame extends JFrame {
         java.util.List<UnitType> playerWave = playerTeam.drainQueuedUnits();
         java.util.List<UnitType> enemyWave = enemyTeam.drainQueuedUnits();
 
+        int playerLane = nextPlayerLaneIndex;
         for (UnitType type : playerWave) {
-            playerUnits.add(createUnitInstance(type, true));
+            playerUnits.add(createUnitInstance(type, true, playerLane));
+            playerLane = (playerLane + 1) % LANES_PER_SIDE;
         }
+        nextPlayerLaneIndex = playerLane;
+        int enemyLane = nextEnemyLaneIndex;
         for (UnitType type : enemyWave) {
-            enemyUnits.add(createUnitInstance(type, false));
+            enemyUnits.add(createUnitInstance(type, false, enemyLane));
+            enemyLane = (enemyLane + 1) % LANES_PER_SIDE;
         }
+        nextEnemyLaneIndex = enemyLane;
 
         if (playerWave.isEmpty() && enemyWave.isEmpty()) {
             lastActionMessage = "No reinforcements arrived this wave.";
@@ -1454,9 +1743,9 @@ public class HeroLineWarsGame extends JFrame {
         }
     }
 
-    private UnitInstance createUnitInstance(UnitType type, boolean fromPlayer) {
+    private UnitInstance createUnitInstance(UnitType type, boolean fromPlayer, int laneIndex) {
         double spawnX = fromPlayer ? getPlayerBaseX() + BASE_WIDTH + 8 : getEnemyBaseX() - UNIT_SIZE - 8;
-        double laneTop = fromPlayer ? getEnemyLaneTop() : getPlayerLaneTop();
+        double laneTop = fromPlayer ? getEnemyLaneTop(laneIndex) : getPlayerLaneTop(laneIndex);
         int laneHeight = getLaneHeight();
         double topLimit = laneTop + UNIT_VERTICAL_MARGIN;
         double bottomLimit = laneTop + laneHeight - UNIT_SIZE - UNIT_VERTICAL_MARGIN;
@@ -1464,7 +1753,7 @@ public class HeroLineWarsGame extends JFrame {
             bottomLimit = topLimit;
         }
         double spawnY = topLimit + (bottomLimit - topLimit) / 2.0;
-        return new UnitInstance(type, spawnX, spawnY, topLimit, bottomLimit, fromPlayer);
+        return new UnitInstance(type, spawnX, spawnY, topLimit, bottomLimit, fromPlayer, laneIndex);
     }
 
     private void resolveHeroUnitCombat() {
@@ -1573,25 +1862,25 @@ public class HeroLineWarsGame extends JFrame {
         if (gameOver) {
             return;
         }
-        int laneHeight = getLaneHeight();
-        double playerUnitTop = getEnemyLaneTop() + UNIT_VERTICAL_MARGIN;
-        double playerUnitBottom = getEnemyLaneTop() + laneHeight - UNIT_SIZE - UNIT_VERTICAL_MARGIN;
-        double enemyUnitTop = getPlayerLaneTop() + UNIT_VERTICAL_MARGIN;
-        double enemyUnitBottom = getPlayerLaneTop() + laneHeight - UNIT_SIZE - UNIT_VERTICAL_MARGIN;
-        if (playerUnitBottom < playerUnitTop) {
-            playerUnitBottom = playerUnitTop;
-        }
-        if (enemyUnitBottom < enemyUnitTop) {
-            enemyUnitBottom = enemyUnitTop;
-        }
-
         for (UnitInstance unit : playerUnits) {
-            unit.updateLaneBounds(playerUnitTop, playerUnitBottom);
+            int laneIndex = unit.getLaneIndex();
+            double laneTop = getEnemyLaneTop(laneIndex) + UNIT_VERTICAL_MARGIN;
+            double laneBottom = getEnemyLaneTop(laneIndex) + getLaneHeight() - UNIT_SIZE - UNIT_VERTICAL_MARGIN;
+            if (laneBottom < laneTop) {
+                laneBottom = laneTop;
+            }
+            unit.updateLaneBounds(laneTop, laneBottom);
             unit.preUpdate();
             unit.advance(UNIT_SPEED, getEnemyBaseX() - UNIT_SIZE);
         }
         for (UnitInstance unit : enemyUnits) {
-            unit.updateLaneBounds(enemyUnitTop, enemyUnitBottom);
+            int laneIndex = unit.getLaneIndex();
+            double laneTop = getPlayerLaneTop(laneIndex) + UNIT_VERTICAL_MARGIN;
+            double laneBottom = getPlayerLaneTop(laneIndex) + getLaneHeight() - UNIT_SIZE - UNIT_VERTICAL_MARGIN;
+            if (laneBottom < laneTop) {
+                laneBottom = laneTop;
+            }
+            unit.updateLaneBounds(laneTop, laneBottom);
             unit.preUpdate();
             unit.advance(-UNIT_SPEED, getPlayerBaseX() + BASE_WIDTH);
         }
@@ -1672,6 +1961,7 @@ public class HeroLineWarsGame extends JFrame {
         private boolean engaged;
         private boolean engagedLastTick;
         private final boolean fromPlayer;
+        private final int laneIndex;
         private int spawnShield;
         private double y;
         private double targetY;
@@ -1679,7 +1969,8 @@ public class HeroLineWarsGame extends JFrame {
         private double bottomLimit;
         private double laneCenter;
 
-        UnitInstance(UnitType type, double x, double y, double topLimit, double bottomLimit, boolean fromPlayer) {
+        UnitInstance(UnitType type, double x, double y, double topLimit, double bottomLimit, boolean fromPlayer,
+                int laneIndex) {
             this.type = type;
             this.x = x;
             this.y = y;
@@ -1687,9 +1978,14 @@ public class HeroLineWarsGame extends JFrame {
             this.attackCooldown = 0;
             this.baseAttackCooldown = 0;
             this.fromPlayer = fromPlayer;
+            this.laneIndex = laneIndex;
             this.spawnShield = SPAWN_SHIELD_TICKS;
             updateLaneBounds(topLimit, bottomLimit);
             this.targetY = clamp(y, this.topLimit, this.bottomLimit);
+        }
+
+        int getLaneIndex() {
+            return laneIndex;
         }
 
         void preUpdate() {
