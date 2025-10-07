@@ -923,10 +923,6 @@ public class HeroLineWarsGame extends JFrame {
         return Math.max(8, (int) Math.round(ATTACK_COOLDOWN_TICKS / hero.getAttackSpeedMultiplier()));
     }
 
-    private int getHeroBaseAttackCooldownTicks(Hero hero) {
-        return Math.max(12, (int) Math.round(BASE_ATTACK_COOLDOWN_TICKS / hero.getAttackSpeedMultiplier()));
-    }
-
     private void handleBasePressure() {
         double heroCenterY = heroY + HERO_WIDTH / 2.0;
         double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
@@ -939,7 +935,7 @@ public class HeroLineWarsGame extends JFrame {
             if (heroBaseAttackCooldown <= 0 && heroX + HERO_WIDTH >= getEnemyBaseX()
                     && heroCenterY >= enemyBaseTop && heroCenterY <= enemyBaseBottom) {
                 enemyBaseHealth = Math.max(0, enemyBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, playerHero.getAttack() * 3));
-                heroBaseAttackCooldown = BASE_ATTACK_COOLDOWN_TICKS;
+                heroBaseAttackCooldown = getHeroBaseAttackCooldownTicks(playerHero);
                 checkVictoryConditions();
             }
         }
@@ -947,10 +943,14 @@ public class HeroLineWarsGame extends JFrame {
             if (enemyBaseAttackCooldown <= 0 && enemyX <= getPlayerBaseX() + BASE_WIDTH
                     && enemyCenterY >= playerBaseTop && enemyCenterY <= playerBaseBottom) {
                 playerBaseHealth = Math.max(0, playerBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, aiHero.getAttack() * 3));
-                enemyBaseAttackCooldown = BASE_ATTACK_COOLDOWN_TICKS;
+                enemyBaseAttackCooldown = getHeroBaseAttackCooldownTicks(aiHero);
                 checkVictoryConditions();
             }
         }
+    }
+
+    private int getHeroBaseAttackCooldownTicks(Hero hero) {
+        return Math.max(12, (int) Math.round(BASE_ATTACK_COOLDOWN_TICKS / hero.getAttackSpeedMultiplier()));
     }
 
     private void onPlayerHeroDefeated() {
@@ -1145,18 +1145,6 @@ public class HeroLineWarsGame extends JFrame {
         }
     }
 
-    private double getLaneLeftBound() {
-        return BASE_MARGIN + BASE_WIDTH + 8;
-    }
-
-    private double getLaneRightBound() {
-        int width = battlefieldPanel.getWidth();
-        if (width <= 0) {
-            width = battlefieldPanel.getPreferredSize().width;
-        }
-        return width - BASE_MARGIN - BASE_WIDTH - HERO_WIDTH - 8;
-    }
-
     private int getPlayerBaseX() {
         return BASE_MARGIN;
     }
@@ -1233,28 +1221,12 @@ public class HeroLineWarsGame extends JFrame {
         return getEnemyClusterTop() + getClusterHeight();
     }
 
-    private int getPlayerLaneTop() {
-        return getPlayerLaneTop(0);
-    }
-
-    private int getEnemyLaneTop() {
-        return getEnemyLaneTop(0);
-    }
-
     private int getPlayerLaneTop(int laneIndex) {
         return getPlayerClusterTop() + laneIndex * (getLaneHeight() + INTRA_LANE_GAP);
     }
 
     private int getEnemyLaneTop(int laneIndex) {
         return getEnemyClusterTop() + laneIndex * (getLaneHeight() + INTRA_LANE_GAP);
-    }
-
-    private double getPlayerLaneCenterY() {
-        return getPlayerClusterCenterY();
-    }
-
-    private double getEnemyLaneCenterY() {
-        return getEnemyClusterCenterY();
     }
 
     private double getPlayerLaneCenterY(int laneIndex) {
@@ -1758,9 +1730,6 @@ public class HeroLineWarsGame extends JFrame {
         }
 
         private void drawLaneWalls(Graphics2D g2, int width, int laneHeight) {
-            if (LANES_PER_SIDE <= 1) {
-                return;
-            }
             int wallThickness = Math.max(12, INTRA_LANE_GAP - 6);
             int wallArc = Math.min(18, wallThickness);
             g2.setColor(new Color(20, 28, 40, 220));
