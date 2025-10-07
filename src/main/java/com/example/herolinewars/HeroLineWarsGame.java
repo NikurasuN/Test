@@ -1,62 +1,78 @@
 package com.example.herolinewars;
 
 import javax.swing.JButton;
-import javax.swing.JComboBox;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
-import javax.swing.JList;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
-import javax.swing.JScrollPane;
-import javax.swing.JSpinner;
-import javax.swing.JTextArea;
-import javax.swing.ListSelectionModel;
-import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
+import javax.swing.Timer;
 import javax.swing.WindowConstants;
 import java.awt.BorderLayout;
+import java.awt.Color;
 import java.awt.Dimension;
-import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.Graphics2D;
 import java.awt.GridLayout;
-import java.util.EnumMap;
-import java.util.List;
-import java.util.Map;
+import java.awt.RenderingHints;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.Random;
 
 /**
- * A small Swing adaptation of the classic Hero Line Wars custom map.
+ * A lightweight real-time version of Hero Line Wars where the action happens on the lane.
  */
 public class HeroLineWarsGame extends JFrame {
-    private final Random random = new Random();
+    private static final int PANEL_WIDTH = 900;
+    private static final int PANEL_HEIGHT = 440;
+    private static final int HERO_WIDTH = 48;
+    private static final int HERO_HEIGHT = 90;
+    private static final int BASE_WIDTH = 80;
+    private static final int BASE_HEIGHT = 190;
+    private static final int BASE_MARGIN = 32;
+    private static final double HERO_SPEED = 4.5;
+    private static final double ENEMY_SPEED = 3.4;
+    private static final int ATTACK_RANGE = 72;
+    private static final int ATTACK_COOLDOWN_TICKS = 20;
+    private static final int BASE_ATTACK_COOLDOWN_TICKS = 28;
+    private static final int RESPAWN_TICKS = 120;
+    private static final int BASE_DAMAGE_PER_TICK = 55;
+    private static final int TICK_MILLIS = 30;
 
-    private final List<Item> shopItems = List.of(
-            new Item("Sharpened Arrows", 6, 0, 75, "Improves your hero's ranged attacks."),
-            new Item("Steel Shield", 0, 5, 70, "Extra protection against incoming waves."),
-            new Item("Mystic Tome", 4, 2, 65, "Knowledge that increases both attack and defense."),
-            new Item("War Banner", 3, 3, 55, "A balanced boost for any hero."),
-            new Item("Champion's Blade", 9, 0, 110, "High risk, high reward damage upgrade.")
-    );
+    private final Random random = new Random();
 
     private Hero playerHero;
     private Hero aiHero;
-    private Team playerTeam;
-    private Team aiTeam;
-    private int round;
-    private boolean planningPhase;
 
-    private final JTextArea logArea = new JTextArea();
-    private final JLabel roundLabel = new JLabel("Round: -");
-    private final JLabel baseLabel = new JLabel("Base HP - You: 0 | Enemy: 0");
-    private final JLabel heroLabel = new JLabel("Hero: -");
-    private final JLabel aiLabel = new JLabel("Enemy Hero: -");
-    private final JLabel queuedUnitsLabel = new JLabel("Queued Units: none");
+    private final JLabel modeLabel = new JLabel("Hero Line Wars - Live Battle");
+    private final JLabel baseLabel = new JLabel();
+    private final JLabel heroLabel = new JLabel();
+    private final JLabel aiLabel = new JLabel();
+    private final JLabel killsLabel = new JLabel();
 
-    private final JButton viewInventoryButton = new JButton("View Inventory");
-    private final JButton buyItemButton = new JButton("Buy Item");
-    private final JButton sendUnitsButton = new JButton("Send Units");
-    private final JButton previewWaveButton = new JButton("Preview Wave");
-    private final JButton finishPlanningButton = new JButton("Finish Planning");
+    private final BattlefieldPanel battlefieldPanel = new BattlefieldPanel();
+    private Timer gameTimer;
+
+    private double heroX;
+    private double heroTargetX;
+    private double enemyX;
+    private double enemyTargetX;
+    private boolean heroAlive;
+    private boolean enemyAlive;
+    private int heroAttackCooldown;
+    private int enemyAttackCooldown;
+    private int heroBaseAttackCooldown;
+    private int enemyBaseAttackCooldown;
+    private int heroRespawnTimer;
+    private int enemyRespawnTimer;
+    private int playerBaseHealth;
+    private int enemyBaseHealth;
+    private int playerKills;
+    private int enemyKills;
+    private boolean gameOver;
 
     public static void main(String[] args) {
         SwingUtilities.invokeLater(() -> {
@@ -68,84 +84,64 @@ public class HeroLineWarsGame extends JFrame {
     public HeroLineWarsGame() {
         super("Hero Line Wars");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
-        setPreferredSize(new Dimension(900, 650));
         setLayout(new BorderLayout());
+        setPreferredSize(new Dimension(960, 640));
 
         buildInterface();
         pack();
         setLocationRelativeTo(null);
 
-        appendLog("Welcome to Hero Line Wars (Swing Edition)!");
-        appendLog("Hold your lane, build a stronger economy than your opponent, and destroy their base!");
         showHeroSelectionDialog();
     }
 
     private void buildInterface() {
         JPanel statusPanel = new JPanel(new GridLayout(0, 1));
-        statusPanel.add(roundLabel);
+        modeLabel.setFont(modeLabel.getFont().deriveFont(Font.BOLD, 16f));
+        statusPanel.add(modeLabel);
         statusPanel.add(baseLabel);
         statusPanel.add(heroLabel);
         statusPanel.add(aiLabel);
-        statusPanel.add(queuedUnitsLabel);
+        statusPanel.add(killsLabel);
         add(statusPanel, BorderLayout.NORTH);
 
-        logArea.setEditable(false);
-        logArea.setLineWrap(true);
-        logArea.setWrapStyleWord(true);
-        add(new JScrollPane(logArea), BorderLayout.CENTER);
+        add(battlefieldPanel, BorderLayout.CENTER);
 
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.CENTER));
-        buttonPanel.add(viewInventoryButton);
-        buttonPanel.add(buyItemButton);
-        buttonPanel.add(sendUnitsButton);
-        buttonPanel.add(previewWaveButton);
-        buttonPanel.add(finishPlanningButton);
-        add(buttonPanel, BorderLayout.SOUTH);
-
-        viewInventoryButton.addActionListener(e -> showInventoryDialog());
-        buyItemButton.addActionListener(e -> showShopDialog());
-        sendUnitsButton.addActionListener(e -> showSendUnitsDialog());
-        previewWaveButton.addActionListener(e -> showQueuedUnitsDialog());
-        finishPlanningButton.addActionListener(e -> handleFinishPlanning());
-
-        setPlanningControlsEnabled(false);
+        JLabel helpLabel = new JLabel("Click the lane to move your hero. Heroes auto-attack when in range.", SwingConstants.CENTER);
+        helpLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 0, 6, 0));
+        add(helpLabel, BorderLayout.SOUTH);
     }
 
     private void showHeroSelectionDialog() {
         JDialog dialog = new JDialog(this, "Choose Your Hero", true);
         dialog.setLayout(new BorderLayout());
 
-        JTextArea description = new JTextArea();
-        description.setEditable(false);
-        description.setLineWrap(true);
-        description.setWrapStyleWord(true);
-        description.setText("Select a hero to begin the battle. Each hero offers a unique playstyle.");
-        description.setBorder(null);
+        JLabel description = new JLabel("Select a hero to begin the battle.");
+        description.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10));
         dialog.add(description, BorderLayout.NORTH);
 
         JPanel heroPanel = new JPanel(new GridLayout(0, 1, 10, 10));
 
         JButton rangerButton = new JButton("Ranger - Balanced stats and reliable damage.");
         rangerButton.addActionListener(e -> {
-            playerHero = new Hero("Ranger", 95, 16, 4, 120, 50);
+            playerHero = new Hero("Ranger", 95, 16, 4, 0, 0);
             dialog.dispose();
-            startGame();
+            startBattle();
         });
         heroPanel.add(rangerButton);
 
         JButton knightButton = new JButton("Knight - Heavily armored and built to tank waves.");
         knightButton.addActionListener(e -> {
-            playerHero = new Hero("Knight", 125, 12, 7, 120, 50);
+            playerHero = new Hero("Knight", 125, 12, 7, 0, 0);
             dialog.dispose();
-            startGame();
+            startBattle();
         });
         heroPanel.add(knightButton);
 
         JButton mageButton = new JButton("Battle Mage - Fragile but deals heavy attacks.");
         mageButton.addActionListener(e -> {
-            playerHero = new Hero("Battle Mage", 80, 20, 3, 120, 55);
+            playerHero = new Hero("Battle Mage", 80, 20, 3, 0, 0);
             dialog.dispose();
-            startGame();
+            startBattle();
         });
         heroPanel.add(mageButton);
 
@@ -155,409 +151,372 @@ public class HeroLineWarsGame extends JFrame {
         dialog.setVisible(true);
     }
 
-    private void startGame() {
+    private void startBattle() {
         aiHero = createAiHero();
-        playerTeam = new Team("Player", playerHero);
-        aiTeam = new Team("Legion", aiHero);
-        round = 0;
-        planningPhase = false;
+        playerBaseHealth = 1000;
+        enemyBaseHealth = 1000;
+        playerKills = 0;
+        enemyKills = 0;
+        heroAlive = true;
+        enemyAlive = true;
+        heroRespawnTimer = 0;
+        enemyRespawnTimer = 0;
+        heroAttackCooldown = 0;
+        enemyAttackCooldown = 0;
+        heroBaseAttackCooldown = 0;
+        enemyBaseAttackCooldown = 0;
+        gameOver = false;
 
-        appendLog("\nYour hero: " + playerHero.getName());
-        appendLog("Facing the opposing legion: " + aiHero.getName());
-        updateStatusLabels();
-        startNextRound();
+        playerHero.resetHealth();
+        aiHero.resetHealth();
+
+        heroX = getPlayerSpawnX();
+        heroTargetX = heroX;
+        enemyX = getEnemySpawnX();
+        enemyTargetX = enemyX;
+
+        refreshHud();
+        battlefieldPanel.repaint();
+
+        if (gameTimer != null) {
+            gameTimer.stop();
+        }
+        gameTimer = new Timer(TICK_MILLIS, e -> updateGame());
+        gameTimer.start();
     }
 
-    private void startNextRound() {
-        if (playerTeam.isDefeated() || aiTeam.isDefeated()) {
+    private void updateGame() {
+        if (gameOver) {
             return;
         }
-        round++;
-        planningPhase = true;
-        appendLog("\n==============================");
-        appendLog("Round " + round);
-        appendLog("==============================");
 
-        startOfRoundIncome();
-        updateStatusLabels();
-        updateQueuedUnitsLabel();
-        setPlanningControlsEnabled(true);
-    }
+        double leftBound = getLaneLeftBound();
+        double rightBound = getLaneRightBound();
 
-    private void setPlanningControlsEnabled(boolean enabled) {
-        viewInventoryButton.setEnabled(enabled);
-        buyItemButton.setEnabled(enabled);
-        sendUnitsButton.setEnabled(enabled);
-        previewWaveButton.setEnabled(enabled);
-        finishPlanningButton.setEnabled(enabled);
-    }
+        heroTargetX = clamp(heroTargetX, leftBound, rightBound);
+        enemyTargetX = clamp(enemyTargetX, leftBound, rightBound);
 
-    private void showInventoryDialog() {
-        if (!planningPhase || playerHero == null) {
-            return;
-        }
-        List<Item> inventory = playerHero.getInventory();
-        StringBuilder builder = new StringBuilder();
-        builder.append(playerHero.getName()).append("'s Inventory:\n");
-        if (inventory.isEmpty()) {
-            builder.append("  (empty)\n");
+        if (heroAlive) {
+            heroX = approach(heroX, heroTargetX, HERO_SPEED);
         } else {
-            for (Item item : inventory) {
-                builder.append("  • ").append(item).append("\n");
+            if (heroRespawnTimer > 0) {
+                heroRespawnTimer--;
+            }
+            if (heroRespawnTimer <= 0) {
+                heroAlive = true;
+                playerHero.resetHealth();
+                heroX = getPlayerSpawnX();
+                heroTargetX = heroX;
             }
         }
-        JOptionPane.showMessageDialog(this, builder.toString(), "Inventory", JOptionPane.INFORMATION_MESSAGE);
-    }
 
-    private void showShopDialog() {
-        if (!planningPhase || playerHero == null) {
-            return;
-        }
-
-        String[] itemDescriptions = new String[shopItems.size()];
-        for (int i = 0; i < shopItems.size(); i++) {
-            Item item = shopItems.get(i);
-            itemDescriptions[i] = String.format("%s (Cost: %d, +%d ATK, +%d DEF) - %s",
-                    item.getName(), item.getCost(), item.getAttackBonus(), item.getDefenseBonus(), item.getDescription());
-        }
-
-        JList<String> list = new JList<>(itemDescriptions);
-        list.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-        JScrollPane scrollPane = new JScrollPane(list);
-        scrollPane.setPreferredSize(new Dimension(400, 180));
-
-        int option = JOptionPane.showConfirmDialog(this, scrollPane, "Shop", JOptionPane.OK_CANCEL_OPTION);
-        if (option == JOptionPane.OK_OPTION) {
-            int index = list.getSelectedIndex();
-            if (index >= 0) {
-                Item selected = shopItems.get(index);
-                if (playerHero.spendGold(selected.getCost())) {
-                    playerHero.applyItem(selected);
-                    appendLog(String.format("Purchased %s! New stats -> ATK: %d, DEF: %d", selected.getName(),
-                            playerHero.getAttack(), playerHero.getDefense()));
-                } else {
-                    JOptionPane.showMessageDialog(this, "Not enough gold for that item.", "Insufficient Gold",
-                            JOptionPane.WARNING_MESSAGE);
-                }
-                updateStatusLabels();
+        if (enemyAlive) {
+            if (heroAlive) {
+                enemyTargetX = clamp(heroX + HERO_WIDTH + 25, leftBound, rightBound);
+            } else {
+                enemyTargetX = clamp(getPlayerBaseX() + BASE_WIDTH + 16, leftBound, rightBound);
             }
-        }
-    }
-
-    private void showSendUnitsDialog() {
-        if (!planningPhase || playerHero == null) {
-            return;
-        }
-
-        JPanel panel = new JPanel(new GridLayout(0, 1, 4, 4));
-        JComboBox<UnitType> unitComboBox = new JComboBox<>(UnitType.values());
-        JSpinner quantitySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 20, 1));
-
-        panel.add(new JLabel("Unit:"));
-        panel.add(unitComboBox);
-        panel.add(new JLabel("Quantity:"));
-        panel.add(quantitySpinner);
-
-        int option = JOptionPane.showConfirmDialog(this, panel, "Send Units", JOptionPane.OK_CANCEL_OPTION);
-        if (option == JOptionPane.OK_OPTION) {
-            UnitType selected = (UnitType) unitComboBox.getSelectedItem();
-            int quantity = (int) quantitySpinner.getValue();
-            if (selected != null) {
-                queueUnits(selected, quantity);
-            }
-        }
-    }
-
-    private void queueUnits(UnitType selected, int quantity) {
-        Hero hero = playerTeam.getHero();
-        int totalCost = selected.getCost() * quantity;
-        if (hero.getGold() < totalCost) {
-            JOptionPane.showMessageDialog(this, "Not enough gold to send that many units.",
-                    "Insufficient Gold", JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        hero.spendGold(totalCost);
-        hero.addIncome(selected.getIncomeBonus() * quantity);
-        for (int i = 0; i < quantity; i++) {
-            playerTeam.queueUnit(selected);
-        }
-        appendLog(String.format("Queued %d %s for the next wave. Income is now %d.",
-                quantity, selected.getDisplayName(), hero.getIncome()));
-        updateStatusLabels();
-        updateQueuedUnitsLabel();
-    }
-
-    private void showQueuedUnitsDialog() {
-        if (!planningPhase || playerTeam == null) {
-            return;
-        }
-        List<UnitType> queuedUnits = playerTeam.getQueuedUnitsSnapshot();
-        if (queuedUnits.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "No units queued yet for the next wave.",
-                    "Queued Units", JOptionPane.INFORMATION_MESSAGE);
-            return;
-        }
-
-        Map<UnitType, Integer> counts = new EnumMap<>(UnitType.class);
-        for (UnitType type : UnitType.values()) {
-            counts.put(type, 0);
-        }
-        for (UnitType unit : queuedUnits) {
-            counts.put(unit, counts.get(unit) + 1);
-        }
-        StringBuilder builder = new StringBuilder("Units ready for the next wave:\n");
-        for (Map.Entry<UnitType, Integer> entry : counts.entrySet()) {
-            if (entry.getValue() > 0) {
-                builder.append("  ").append(entry.getKey().getDisplayName())
-                        .append(" x").append(entry.getValue()).append('\n');
-            }
-        }
-        JOptionPane.showMessageDialog(this, builder.toString(), "Queued Units", JOptionPane.INFORMATION_MESSAGE);
-    }
-
-    private void handleFinishPlanning() {
-        if (!planningPhase) {
-            return;
-        }
-        planningPhase = false;
-        setPlanningControlsEnabled(false);
-
-        appendLog("\nResolving the round...");
-        aiPlanningPhase(aiTeam, round);
-
-        List<UnitType> playerWave = playerTeam.drainQueuedUnits();
-        List<UnitType> aiWave = aiTeam.drainQueuedUnits();
-        updateQueuedUnitsLabel();
-
-        resolveWave("Player", playerWave, aiTeam);
-        resolveWave(aiTeam.getName(), aiWave, playerTeam);
-
-        printRoundSummary();
-        updateStatusLabels();
-
-        if (checkForWinner()) {
-            return;
-        }
-        if (round >= 30) {
-            determineEconomicWinner();
-            return;
-        }
-        startNextRound();
-    }
-
-    private boolean checkForWinner() {
-        boolean playerDefeated = playerTeam.isDefeated();
-        boolean aiDefeated = aiTeam.isDefeated();
-
-        if (playerDefeated && aiDefeated) {
-            appendLog("Both bases fell at the same time! It's a draw.");
-            endGame("Draw");
-            return true;
-        } else if (aiDefeated) {
-            appendLog("Congratulations! You defended your base and destroyed the opposing legion.");
-            endGame("Victory");
-            return true;
-        } else if (playerDefeated) {
-            appendLog("Your base was overwhelmed. Better luck next time!");
-            endGame("Defeat");
-            return true;
-        }
-        return false;
-    }
-
-    private void determineEconomicWinner() {
-        appendLog("Time is up! The stronger economy wins...");
-        if (playerTeam.getHero().getIncome() >= aiTeam.getHero().getIncome()) {
-            appendLog("Your team generated more income and is declared the winner!");
-            endGame("Victory by economy");
+            enemyX = approach(enemyX, enemyTargetX, ENEMY_SPEED);
         } else {
-            appendLog("The legion amassed the greater economy. They win this time.");
-            endGame("Defeat by economy");
+            if (enemyRespawnTimer > 0) {
+                enemyRespawnTimer--;
+            }
+            if (enemyRespawnTimer <= 0) {
+                enemyAlive = true;
+                aiHero.resetHealth();
+                enemyX = getEnemySpawnX();
+                enemyTargetX = enemyX;
+            }
+        }
+
+        if (heroAttackCooldown > 0) {
+            heroAttackCooldown--;
+        }
+        if (enemyAttackCooldown > 0) {
+            enemyAttackCooldown--;
+        }
+        if (heroBaseAttackCooldown > 0) {
+            heroBaseAttackCooldown--;
+        }
+        if (enemyBaseAttackCooldown > 0) {
+            enemyBaseAttackCooldown--;
+        }
+
+        handleHeroCombat();
+        handleBasePressure();
+
+        refreshHud();
+        battlefieldPanel.repaint();
+    }
+
+    private void handleHeroCombat() {
+        if (!heroAlive || !enemyAlive) {
+            return;
+        }
+        double heroCenter = heroX + HERO_WIDTH / 2.0;
+        double enemyCenter = enemyX + HERO_WIDTH / 2.0;
+        double distance = Math.abs(heroCenter - enemyCenter);
+        if (distance > ATTACK_RANGE) {
+            return;
+        }
+        if (heroAttackCooldown <= 0) {
+            int damage = Math.max(1, playerHero.getAttack() - aiHero.getDefense());
+            if (aiHero.takeDamage(damage)) {
+                onEnemyHeroDefeated();
+                return;
+            }
+            heroAttackCooldown = ATTACK_COOLDOWN_TICKS;
+        }
+        if (enemyAttackCooldown <= 0) {
+            int damage = Math.max(1, aiHero.getAttack() - playerHero.getDefense());
+            if (playerHero.takeDamage(damage)) {
+                onPlayerHeroDefeated();
+                return;
+            }
+            enemyAttackCooldown = ATTACK_COOLDOWN_TICKS;
         }
     }
 
-    private void endGame(String result) {
-        setPlanningControlsEnabled(false);
-        JOptionPane.showMessageDialog(this, result, "Game Over", JOptionPane.INFORMATION_MESSAGE);
+    private void handleBasePressure() {
+        if (heroAlive && !enemyAlive) {
+            if (heroBaseAttackCooldown <= 0 && heroX + HERO_WIDTH >= getEnemyBaseX()) {
+                enemyBaseHealth = Math.max(0, enemyBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, playerHero.getAttack() * 3));
+                heroBaseAttackCooldown = BASE_ATTACK_COOLDOWN_TICKS;
+                checkVictoryConditions();
+            }
+        }
+        if (enemyAlive && !heroAlive) {
+            if (enemyBaseAttackCooldown <= 0 && enemyX <= getPlayerBaseX() + BASE_WIDTH) {
+                playerBaseHealth = Math.max(0, playerBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, aiHero.getAttack() * 3));
+                enemyBaseAttackCooldown = BASE_ATTACK_COOLDOWN_TICKS;
+                checkVictoryConditions();
+            }
+        }
     }
 
-    private void startOfRoundIncome() {
-        playerTeam.getHero().earnIncome();
-        aiTeam.getHero().earnIncome();
-        appendLog(String.format("Income received! You now have %d gold (Income: %d).",
-                playerTeam.getHero().getGold(), playerTeam.getHero().getIncome()));
+    private void onPlayerHeroDefeated() {
+        heroAlive = false;
+        heroRespawnTimer = RESPAWN_TICKS;
+        enemyKills++;
+        heroAttackCooldown = ATTACK_COOLDOWN_TICKS;
+    }
+
+    private void onEnemyHeroDefeated() {
+        enemyAlive = false;
+        enemyRespawnTimer = RESPAWN_TICKS;
+        playerKills++;
+        enemyAttackCooldown = ATTACK_COOLDOWN_TICKS;
+    }
+
+    private void checkVictoryConditions() {
+        if (gameOver) {
+            return;
+        }
+        if (enemyBaseHealth <= 0) {
+            finishBattle(true);
+        } else if (playerBaseHealth <= 0) {
+            finishBattle(false);
+        }
+    }
+
+    private void finishBattle(boolean playerWon) {
+        gameOver = true;
+        if (gameTimer != null) {
+            gameTimer.stop();
+        }
+        String message = playerWon ? "Victory! The enemy base has fallen." : "Defeat! Your base has been destroyed.";
+        JOptionPane.showMessageDialog(this, message, "Battle Complete", JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    private void refreshHud() {
+        if (playerHero == null || aiHero == null) {
+            return;
+        }
+        baseLabel.setText(String.format("Base HP - You: %d | Enemy: %d", Math.max(0, playerBaseHealth), Math.max(0, enemyBaseHealth)));
+        heroLabel.setText(String.format("Hero: %s | HP %d/%d | ATK %d | DEF %d", playerHero.getName(),
+                Math.max(0, playerHero.getCurrentHealth()), playerHero.getMaxHealth(), playerHero.getAttack(), playerHero.getDefense()));
+        aiLabel.setText(String.format("Enemy Hero: %s | HP %d/%d | ATK %d | DEF %d", aiHero.getName(),
+                Math.max(0, aiHero.getCurrentHealth()), aiHero.getMaxHealth(), aiHero.getAttack(), aiHero.getDefense()));
+        killsLabel.setText(String.format("Kills - You: %d | Enemy: %d", playerKills, enemyKills));
     }
 
     private Hero createAiHero() {
         int roll = random.nextInt(3);
         switch (roll) {
             case 0:
-                appendLog("The opposing legion fields a disciplined Sentinel.");
-                return new Hero("Sentinel", 110, 14, 6, 120, 52);
+                return new Hero("Sentinel", 110, 14, 6, 0, 0);
             case 1:
-                appendLog("The opposing legion fields a ferocious Berserker.");
-                return new Hero("Berserker", 85, 19, 4, 120, 54);
+                return new Hero("Berserker", 85, 19, 4, 0, 0);
             default:
-                appendLog("The opposing legion fields an arcane Warlock.");
-                return new Hero("Warlock", 90, 17, 5, 120, 50);
+                return new Hero("Warlock", 90, 17, 5, 0, 0);
         }
     }
 
-    private void aiPlanningPhase(Team aiTeam, int currentRound) {
-        Hero hero = aiTeam.getHero();
-        appendLog("The opposing legion is preparing its strategy...");
-
-        if (hero.getGold() >= 80 && hero.getInventory().size() < 4 && random.nextBoolean()) {
-            Item chosen = shopItems.get(random.nextInt(shopItems.size()));
-            if (hero.spendGold(chosen.getCost())) {
-                hero.applyItem(chosen);
-                appendLog(String.format("The legion equips %s for their hero.", chosen.getName()));
-            }
-        }
-
-        int minCost = getMinimumUnitCost();
-        int unitsToSend = Math.max(1, currentRound / 2);
-        while (hero.getGold() >= minCost && unitsToSend > 0) {
-            UnitType type = chooseUnitForAi(hero, currentRound);
-            if (!hero.spendGold(type.getCost())) {
-                break;
-            }
-            aiTeam.queueUnit(type);
-            hero.addIncome(type.getIncomeBonus());
-            unitsToSend--;
-            appendLog(String.format("The legion queues a %s for the coming wave.", type.getDisplayName()));
-        }
+    private double getLaneLeftBound() {
+        return BASE_MARGIN + BASE_WIDTH + 8;
     }
 
-    private UnitType chooseUnitForAi(Hero hero, int currentRound) {
-        UnitType[] types = UnitType.values();
-        if (currentRound < 4) {
-            return types[random.nextInt(Math.min(types.length, 3))];
+    private double getLaneRightBound() {
+        int width = battlefieldPanel.getWidth();
+        if (width <= 0) {
+            width = battlefieldPanel.getPreferredSize().width;
         }
-        if (hero.getIncome() > 120) {
-            return types[types.length - 1];
-        }
-        return types[random.nextInt(types.length)];
+        return width - BASE_MARGIN - BASE_WIDTH - HERO_WIDTH - 8;
     }
 
-    private int getMinimumUnitCost() {
-        int min = Integer.MAX_VALUE;
-        for (UnitType type : UnitType.values()) {
-            min = Math.min(min, type.getCost());
-        }
-        return min;
+    private int getPlayerBaseX() {
+        return BASE_MARGIN;
     }
 
-    private void resolveWave(String attackerName, List<UnitType> wave, Team defenderTeam) {
-        Hero defender = defenderTeam.getHero();
-        if (wave.isEmpty()) {
-            appendLog(String.format("%s sends no units this round.", attackerName));
-            return;
+    private int getEnemyBaseX() {
+        int width = battlefieldPanel.getWidth();
+        if (width <= 0) {
+            width = battlefieldPanel.getPreferredSize().width;
         }
+        return width - BASE_MARGIN - BASE_WIDTH;
+    }
 
-        defender.resetHealth();
-        int goldEarned = 0;
-        boolean heroFell = false;
-        int baseDamage = 0;
-        int unitsProcessed = 0;
+    private double getPlayerSpawnX() {
+        return getLaneLeftBound() + 20;
+    }
 
-        for (int i = 0; i < wave.size(); i++) {
-            UnitType unit = wave.get(i);
-            int unitHealth = unit.getHealth();
-            while (unitHealth > 0) {
-                unitHealth -= defender.getAttack();
-                if (unitHealth <= 0) {
-                    goldEarned += 8;
-                    break;
+    private double getEnemySpawnX() {
+        return getLaneRightBound() - 20;
+    }
+
+    private static double approach(double current, double target, double speed) {
+        if (Math.abs(target - current) <= speed) {
+            return target;
+        }
+        return current + Math.signum(target - current) * speed;
+    }
+
+    private static double clamp(double value, double min, double max) {
+        if (value < min) {
+            return min;
+        }
+        if (value > max) {
+            return max;
+        }
+        return value;
+    }
+
+    private class BattlefieldPanel extends JPanel {
+        BattlefieldPanel() {
+            setPreferredSize(new Dimension(PANEL_WIDTH, PANEL_HEIGHT));
+            setBackground(new Color(20, 30, 22));
+
+            MouseAdapter adapter = new MouseAdapter() {
+                @Override
+                public void mousePressed(MouseEvent e) {
+                    handleClick(e);
                 }
-                int damageToHero = Math.max(1, unit.getDamage() - defender.getDefense());
-                if (defender.takeDamage(damageToHero)) {
-                    heroFell = true;
-                    baseDamage += Math.max(6, unit.getDamage());
-                    unitsProcessed = i + 1;
-                    break;
-                }
+            };
+            addMouseListener(adapter);
+        }
+
+        private void handleClick(MouseEvent e) {
+            if (!heroAlive || gameOver) {
+                return;
             }
-            if (heroFell) {
-                break;
+            double target = e.getX() - HERO_WIDTH / 2.0;
+            heroTargetX = clamp(target, getLaneLeftBound(), getLaneRightBound());
+        }
+
+        @Override
+        protected void paintComponent(Graphics g) {
+            super.paintComponent(g);
+            Graphics2D g2 = (Graphics2D) g.create();
+            g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+
+            int width = getWidth();
+            int height = getHeight();
+            int laneTop = height / 2 - 120;
+            int laneHeight = 240;
+            g2.setColor(new Color(32, 48, 34));
+            g2.fillRoundRect(0, laneTop, width, laneHeight, 25, 25);
+
+            int floorY = laneTop + laneHeight - 20;
+            g2.setColor(new Color(24, 38, 26));
+            g2.fillRect(0, floorY, width, 20);
+
+            drawBase(g2, getPlayerBaseX(), floorY, new Color(66, 135, 245));
+            drawBase(g2, getEnemyBaseX(), floorY, new Color(200, 70, 70));
+
+            if (enemyAlive) {
+                drawHero(g2, (int) Math.round(enemyX), floorY - HERO_HEIGHT, aiHero.getName(),
+                        aiHero.getCurrentHealth(), aiHero.getMaxHealth(), new Color(214, 68, 68));
+            } else {
+                drawRespawnIndicator(g2, (int) Math.round(enemyX), floorY - HERO_HEIGHT, enemyRespawnTimer);
             }
-            unitsProcessed = i + 1;
-        }
 
-        if (heroFell) {
-            for (int i = unitsProcessed; i < wave.size(); i++) {
-                UnitType remaining = wave.get(i);
-                baseDamage += Math.max(6, remaining.getDamage());
+            if (heroAlive) {
+                drawHero(g2, (int) Math.round(heroX), floorY - HERO_HEIGHT, playerHero.getName(),
+                        playerHero.getCurrentHealth(), playerHero.getMaxHealth(), new Color(64, 144, 255));
+            } else {
+                drawRespawnIndicator(g2, (int) Math.round(heroX), floorY - HERO_HEIGHT, heroRespawnTimer);
             }
-            defenderTeam.damageBase(baseDamage);
-            appendLog(String.format("%s's hero was overwhelmed! The base takes %d damage (Base HP: %d).",
-                    defenderTeam.getName(), baseDamage, Math.max(0, defenderTeam.getBaseHealth())));
-        } else {
-            int survivingHealth = defender.getCurrentHealth();
-            appendLog(String.format("%s defended the wave with %d HP remaining and earned %d bonus gold.",
-                    defender.getName(), survivingHealth, goldEarned));
-            defender.addGold(goldEarned);
-        }
-        defender.resetHealth();
-    }
 
-    private void printRoundSummary() {
-        appendLog("\n--- Round Summary ---");
-        appendLog(String.format("Your base HP: %d", Math.max(0, playerTeam.getBaseHealth())));
-        appendLog(String.format("Enemy base HP: %d", Math.max(0, aiTeam.getBaseHealth())));
-        appendLog(String.format("Your hero income: %d, Gold: %d", playerTeam.getHero().getIncome(),
-                playerTeam.getHero().getGold()));
-        appendLog(String.format("Enemy hero income: %d", aiTeam.getHero().getIncome()));
-    }
+            g2.dispose();
+        }
 
-    private void updateStatusLabels() {
-        roundLabel.setText("Round: " + round);
-        if (playerTeam != null && aiTeam != null) {
-            baseLabel.setText(String.format("Base HP - You: %d | Enemy: %d",
-                    Math.max(0, playerTeam.getBaseHealth()), Math.max(0, aiTeam.getBaseHealth())));
-            Hero hero = playerTeam.getHero();
-            heroLabel.setText(String.format("Hero: %s | ATK %d | DEF %d | Gold %d | Income %d",
-                    hero.getName(), hero.getAttack(), hero.getDefense(), hero.getGold(), hero.getIncome()));
-            Hero enemyHero = aiTeam.getHero();
-            aiLabel.setText(String.format("Enemy Hero: %s | ATK %d | DEF %d | Gold %d | Income %d",
-                    enemyHero.getName(), enemyHero.getAttack(), enemyHero.getDefense(), enemyHero.getGold(),
-                    enemyHero.getIncome()));
-        }
-    }
-
-    private void updateQueuedUnitsLabel() {
-        if (playerTeam == null) {
-            queuedUnitsLabel.setText("Queued Units: none");
-            return;
-        }
-        List<UnitType> queued = playerTeam.getQueuedUnitsSnapshot();
-        if (queued.isEmpty()) {
-            queuedUnitsLabel.setText("Queued Units: none");
-            return;
-        }
-        Map<UnitType, Integer> counts = new EnumMap<>(UnitType.class);
-        for (UnitType type : UnitType.values()) {
-            counts.put(type, 0);
-        }
-        for (UnitType unit : queued) {
-            counts.put(unit, counts.get(unit) + 1);
-        }
-        StringBuilder builder = new StringBuilder("Queued Units: ");
-        boolean first = true;
-        for (Map.Entry<UnitType, Integer> entry : counts.entrySet()) {
-            if (entry.getValue() > 0) {
-                if (!first) {
-                    builder.append(", ");
-                }
-                builder.append(entry.getKey().getDisplayName()).append(" x").append(entry.getValue());
-                first = false;
+        private void drawBase(Graphics2D g2, int baseX, int floorY, Color color) {
+            int baseTop = floorY - BASE_HEIGHT;
+            g2.setColor(color.darker());
+            g2.fillRoundRect(baseX - 4, baseTop - 6, BASE_WIDTH + 8, BASE_HEIGHT + 12, 18, 18);
+            g2.setColor(color);
+            g2.fillRoundRect(baseX, baseTop, BASE_WIDTH, BASE_HEIGHT, 16, 16);
+            int barWidth = BASE_WIDTH;
+            int barHeight = 10;
+            int currentHp;
+            int maxHp = 1000;
+            if (baseX <= BASE_MARGIN + 1) {
+                currentHp = Math.max(0, playerBaseHealth);
+            } else {
+                currentHp = Math.max(0, enemyBaseHealth);
             }
+            double ratio = Math.min(1.0, currentHp / (double) maxHp);
+            g2.setColor(Color.DARK_GRAY);
+            g2.fillRoundRect(baseX, baseTop - barHeight - 4, barWidth, barHeight, 10, 10);
+            g2.setColor(new Color(30, 200, 90));
+            g2.fillRoundRect(baseX, baseTop - barHeight - 4, (int) Math.round(barWidth * ratio), barHeight, 10, 10);
         }
-        queuedUnitsLabel.setText(builder.toString());
-    }
 
-    private void appendLog(String text) {
-        logArea.append(text + "\n");
-        logArea.setCaretPosition(logArea.getDocument().getLength());
+        private void drawHero(Graphics2D g2, int x, int y, String name, int currentHp, int maxHp, Color color) {
+            g2.setColor(color);
+            g2.fillRoundRect(x, y, HERO_WIDTH, HERO_HEIGHT, 18, 18);
+            g2.setColor(Color.BLACK);
+            g2.drawRoundRect(x, y, HERO_WIDTH, HERO_HEIGHT, 18, 18);
+
+            int barWidth = HERO_WIDTH;
+            int barHeight = 8;
+            double ratio = Math.min(1.0, Math.max(0, currentHp) / (double) maxHp);
+            int barX = x;
+            int barY = y - barHeight - 4;
+            g2.setColor(new Color(45, 45, 45));
+            g2.fillRoundRect(barX, barY, barWidth, barHeight, 8, 8);
+            g2.setColor(new Color(70, 220, 90));
+            g2.fillRoundRect(barX, barY, (int) Math.round(barWidth * ratio), barHeight, 8, 8);
+
+            g2.setFont(g2.getFont().deriveFont(Font.BOLD, 12f));
+            g2.setColor(Color.WHITE);
+            int textY = y - barHeight - 8;
+            g2.drawString(name, x - 4, textY - 4);
+        }
+
+        private void drawRespawnIndicator(Graphics2D g2, int x, int y, int timer) {
+            g2.setColor(new Color(120, 120, 120, 150));
+            g2.fillRoundRect(x, y, HERO_WIDTH, HERO_HEIGHT, 18, 18);
+            g2.setColor(Color.LIGHT_GRAY);
+            g2.drawRoundRect(x, y, HERO_WIDTH, HERO_HEIGHT, 18, 18);
+            g2.setFont(g2.getFont().deriveFont(Font.BOLD, 14f));
+            g2.setColor(Color.WHITE);
+            String text = "Respawn";
+            int textWidth = g2.getFontMetrics().stringWidth(text);
+            g2.drawString(text, x + (HERO_WIDTH - textWidth) / 2, y + HERO_HEIGHT / 2);
+            String countdown = String.format("%.1f s", Math.max(0, timer * TICK_MILLIS / 1000.0));
+            int countdownWidth = g2.getFontMetrics().stringWidth(countdown);
+            g2.drawString(countdown, x + (HERO_WIDTH - countdownWidth) / 2, y + HERO_HEIGHT / 2 + 16);
+        }
     }
 }
