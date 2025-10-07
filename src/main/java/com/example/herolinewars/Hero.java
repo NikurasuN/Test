@@ -26,6 +26,9 @@ public class Hero {
     private static final double CRITICAL_PER_INT = 0.015;
     private static final double MAX_CRITICAL = 0.4;
     private static final int SHIELD_PER_INT = 8;
+    private static final int RANGE_UNIT_PIXELS = 24;
+    private static final int PRIMARY_ATTRIBUTE_LEVEL_GAIN = 3;
+    private static final int SECONDARY_ATTRIBUTE_LEVEL_GAIN = 1;
     private static final Random RANDOM = new Random();
 
     private final String name;
@@ -36,15 +39,17 @@ public class Hero {
     private final int baseMaxHealth;
     private final int baseAttack;
     private final int baseDefense;
+    private final int attackRangeUnits;
+    private final int attackRangePixels;
     private int itemAttackBonus;
     private int itemDefenseBonus;
     private int itemStrengthBonus;
     private int itemDexterityBonus;
     private int itemIntelligenceBonus;
 
-    private final int strength;
-    private final int dexterity;
-    private final int intelligence;
+    private int strength;
+    private int dexterity;
+    private int intelligence;
 
     private int maxHealth;
     private int currentHealth;
@@ -53,10 +58,13 @@ public class Hero {
     private int defense;
     private int gold;
     private int income;
+    private int level = 1;
+    private int experience;
+    private int experienceToNextLevel;
 
     public Hero(String name, int baseMaxHealth, int baseAttack, int baseDefense,
                 int strength, int dexterity, int intelligence, PrimaryAttribute primaryAttribute,
-                int startingGold, int startingIncome) {
+                int startingGold, int startingIncome, int attackRangeUnits) {
         this.name = name;
         this.primaryAttribute = primaryAttribute;
         this.baseMaxHealth = baseMaxHealth;
@@ -67,6 +75,9 @@ public class Hero {
         this.intelligence = intelligence;
         this.gold = startingGold;
         this.income = startingIncome;
+        this.attackRangeUnits = Math.max(1, attackRangeUnits);
+        this.attackRangePixels = this.attackRangeUnits * RANGE_UNIT_PIXELS;
+        this.experienceToNextLevel = computeExperienceForLevel(level);
         recalculateStats();
         this.currentHealth = maxHealth;
         this.currentShield = getMaxEnergyShield();
@@ -106,6 +117,26 @@ public class Hero {
 
     public int getAttackPower() {
         return attack;
+    }
+
+    public int getAttackRangeUnits() {
+        return attackRangeUnits;
+    }
+
+    public int getAttackRangePixels() {
+        return attackRangePixels;
+    }
+
+    public int getLevel() {
+        return level;
+    }
+
+    public int getExperience() {
+        return experience;
+    }
+
+    public int getExperienceToNextLevel() {
+        return experienceToNextLevel;
     }
 
     /**
@@ -234,6 +265,22 @@ public class Hero {
         return currentHealth <= 0;
     }
 
+    public int gainExperience(int amount) {
+        if (amount <= 0) {
+            return 0;
+        }
+        experience += amount;
+        int levelsGained = 0;
+        while (experience >= experienceToNextLevel) {
+            experience -= experienceToNextLevel;
+            level++;
+            levelsGained++;
+            applyLevelUp();
+            experienceToNextLevel = computeExperienceForLevel(level);
+        }
+        return levelsGained;
+    }
+
     @Override
     public String toString() {
         return String.format(
@@ -276,5 +323,33 @@ public class Hero {
             default:
                 return getIntelligence();
         }
+    }
+
+    private void applyLevelUp() {
+        switch (primaryAttribute) {
+            case STRENGTH:
+                strength += PRIMARY_ATTRIBUTE_LEVEL_GAIN;
+                dexterity += SECONDARY_ATTRIBUTE_LEVEL_GAIN;
+                intelligence += SECONDARY_ATTRIBUTE_LEVEL_GAIN;
+                break;
+            case DEXTERITY:
+                dexterity += PRIMARY_ATTRIBUTE_LEVEL_GAIN;
+                strength += SECONDARY_ATTRIBUTE_LEVEL_GAIN;
+                intelligence += SECONDARY_ATTRIBUTE_LEVEL_GAIN;
+                break;
+            case INTELLIGENCE:
+            default:
+                intelligence += PRIMARY_ATTRIBUTE_LEVEL_GAIN;
+                strength += SECONDARY_ATTRIBUTE_LEVEL_GAIN;
+                dexterity += SECONDARY_ATTRIBUTE_LEVEL_GAIN;
+                break;
+        }
+        recalculateStats();
+        currentHealth = maxHealth;
+        currentShield = getMaxEnergyShield();
+    }
+
+    private int computeExperienceForLevel(int newLevel) {
+        return 120 + Math.max(0, newLevel - 1) * 60;
     }
 }

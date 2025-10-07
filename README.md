@@ -4,8 +4,9 @@ This project contains a lightweight real-time interpretation of the classic Hero
 
 ## Gameplay overview
 
-- Choose between three hero archetypes (Ranger, Knight, or Battle Mage), each with different stats and play styles.
+- Choose between three hero archetypes (Ranger, Berserker, or Mage), each with distinct attack ranges and play styles.
 - Click anywhere on the lane to command your hero to move. They will automatically attack the opposing hero when in range.
+- Earn experience by defeating units and heroes to level up, gaining larger boosts to your primary attribute than your secondary stats.
 - Defeat the enemy hero to create openings that let you damage their base. Be careful—if you fall, the enemy will march toward yours!
 - Bases lose health when exposed; the match ends when one base is destroyed.
 
