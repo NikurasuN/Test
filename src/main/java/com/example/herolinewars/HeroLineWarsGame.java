@@ -4509,21 +4509,23 @@ public class HeroLineWarsGame extends JFrame {
             if (attackCooldown > 0) {
                 return;
             }
-            if (isDead() || !isInRange(target) || target.isDead()) {
+            if (isDead() || target == null || target.isDead()) {
                 return;
             }
-            target.takeDamage(balance.getDamage());
-            if (target.isDead() && target.markDefeatHandled()) {
-                HeroLineWarsGame.this.handleUnitDefeatedByUnit(this, target);
-            if (attackCooldown <= 0 && isInRange(target)) {
-                if (type == UnitType.ARCHER) {
-                    HeroLineWarsGame.this.launchProjectile(fromPlayer, ProjectileType.ARROW, getCenterX(), getCenterY(),
-                            this, HeroTarget.unit(target));
-                } else {
-                    target.takeDamage(balance.getDamage());
-                }
-                attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
+            if (!isInRange(target)) {
+                return;
             }
+
+            if (type == UnitType.ARCHER) {
+                HeroLineWarsGame.this.launchProjectile(fromPlayer, ProjectileType.ARROW, getCenterX(), getCenterY(), this,
+                        HeroTarget.unit(target));
+            } else {
+                target.takeDamage(balance.getDamage());
+                if (target.isDead() && target.markDefeatHandled()) {
+                    HeroLineWarsGame.this.handleUnitDefeatedByUnit(this, target);
+                }
+            }
+
             attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
         }
 
@@ -4634,6 +4636,8 @@ public class HeroLineWarsGame extends JFrame {
             }
             defeatHandled = true;
             return true;
+        }
+
         int getDamageValue() {
             return balance.getDamage();
         }
