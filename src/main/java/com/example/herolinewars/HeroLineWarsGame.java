@@ -1814,6 +1814,9 @@ public class HeroLineWarsGame extends JFrame {
         if (!sourceList.remove(unit)) {
             return;
         }
+        if (!unit.markDefeatHandled()) {
+            return;
+        }
         if (byPlayerHero) {
             playerHero.addGold(UNIT_KILL_REWARD);
             StringBuilder builder = new StringBuilder(String.format("%s defeated an enemy %s!",
@@ -1829,6 +1832,23 @@ public class HeroLineWarsGame extends JFrame {
                 lastActionMessage = String.format("Enemy %s grew stronger and reached level %d!", aiHero.getName(),
                         aiHero.getLevel());
             }
+        }
+    }
+
+    private void handleUnitDefeatedByUnit(UnitInstance attacker, UnitInstance defeated) {
+        if (attacker.isFromPlayer()) {
+            if (playerHero != null) {
+                playerHero.addGold(UNIT_KILL_REWARD);
+            }
+            lastActionMessage = String.format("Your %s defeated an enemy %s! (+%d gold)",
+                    attacker.getType().getDisplayName(), defeated.getType().getDisplayName(), UNIT_KILL_REWARD);
+        } else {
+            if (aiHero != null) {
+                aiHero.addGold(UNIT_KILL_REWARD);
+            }
+            String enemyName = enemyIsHuman ? "Player 2" : "Enemy";
+            lastActionMessage = String.format("%s %s defeated your %s!",
+                    enemyName, attacker.getType().getDisplayName(), defeated.getType().getDisplayName());
         }
     }
 
@@ -4417,6 +4437,7 @@ public class HeroLineWarsGame extends JFrame {
         private double laneCenter;
         private boolean focusingHero;
         private double heroFocusCenterX;
+        private boolean defeatHandled;
 
         UnitInstance(UnitType type, UnitBalance balance, double x, double y, double topLimit, double bottomLimit,
                 boolean fromPlayer, int laneIndex) {
@@ -4485,6 +4506,15 @@ public class HeroLineWarsGame extends JFrame {
         }
 
         void tryAttack(UnitInstance target) {
+            if (attackCooldown > 0) {
+                return;
+            }
+            if (isDead() || !isInRange(target) || target.isDead()) {
+                return;
+            }
+            target.takeDamage(balance.getDamage());
+            if (target.isDead() && target.markDefeatHandled()) {
+                HeroLineWarsGame.this.handleUnitDefeatedByUnit(this, target);
             if (attackCooldown <= 0 && isInRange(target)) {
                 if (type == UnitType.ARCHER) {
                     HeroLineWarsGame.this.launchProjectile(fromPlayer, ProjectileType.ARROW, getCenterX(), getCenterY(),
@@ -4494,6 +4524,7 @@ public class HeroLineWarsGame extends JFrame {
                 }
                 attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
             }
+            attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
         }
 
         boolean tryAttackHero(Hero hero) {
@@ -4593,6 +4624,16 @@ public class HeroLineWarsGame extends JFrame {
             health = Math.min(health, getMaxHealth());
         }
 
+        boolean isFromPlayer() {
+            return fromPlayer;
+        }
+
+        boolean markDefeatHandled() {
+            if (defeatHandled || !isDead()) {
+                return false;
+            }
+            defeatHandled = true;
+            return true;
         int getDamageValue() {
             return balance.getDamage();
         }
