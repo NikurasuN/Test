@@ -1,49 +1,38 @@
-# Hero Line Wars (Swing Arena)
+# Hero Line Wars (C++ Arena)
 
-This project contains a lightweight real-time interpretation of the classic Hero Line Wars custom maps. It now ships with a small Swing battlefield so you can move your hero with the mouse and watch the duel unfold without relying on console prompts.
+This repository now contains a self-contained C++ interpretation of the classic Hero Line Wars skirmish. The original Swing UI
+has been replaced with an interactive terminal duel where you recruit units, equip items, and march down the lane wave after wa
+ve.
 
 ## Gameplay overview
 
-- Choose between three hero archetypes (Ranger, Berserker, or Mage), each with distinct attack ranges and play styles.
-- Click anywhere on the lane to command your hero to move. Heroes can only change lanes by returning to the illuminated zone in front of their base, where fortified walls open briefly to let them cross.
-- Earn experience by defeating units and heroes to level up, gaining larger boosts to your primary attribute than your secondary stats.
-- Defeat the enemy hero to create openings that let you damage their base. Be careful—if you fall, the enemy will march toward yours!
-- Bases lose health when exposed; the match ends when one base is destroyed.
+- Choose between three hero archetypes (Ranger, Berserker, or Battle Mage), each with distinct primary attributes.
+- Recruit units before every wave to increase your income and tilt the battle in your favour.
+- Purchase equipment to specialise your hero and dominate the front line.
+- Win waves to damage the opposing base—lose and your own fortifications crumble.
 
 ## Building and running
 
-This project is a plain Java application without external dependencies.
-
-### Building with Maven
-
-If you use an IDE such as IntelliJ IDEA, import the project as a Maven build
-and it will automatically configure the correct compile and run classpath.
-You can also invoke Maven directly from the command line:
+The project uses CMake and targets C++17.
 
 ```bash
-# Compile the sources
-mvn clean compile
+# Configure and build (Debug by default)
+cmake -S . -B build
+cmake --build build
 
-# Run the Swing client
-mvn exec:java
+# Run the duel
+./build/hero_line_wars
 ```
+
+To create a release build:
 
 ```bash
-# Compile all sources
-javac -d out $(find src -name "*.java")
-
-# Run the game
-java -cp out com.example.herolinewars.HeroLineWarsGame
+cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
+cmake --build build/release --config Release
+./build/release/hero_line_wars
 ```
 
-When the application launches, a hero selection dialog appears. After choosing your hero, the battle begins instantly inside the Swing window.
+## Windows executable helper
 
-### Creating a Windows `.exe`
-
-If you have access to a Windows machine with JDK 17 or later installed, you can produce a native launcher using the provided PowerShell helper:
-
-```powershell
-pwsh scripts/create-windows-exe.ps1
-```
-
-By default the script expects `JAVA_HOME` to point to your JDK. It compiles the sources, packages them into a runnable JAR, and then invokes `jpackage` to emit `HeroLineWarsGame.exe` inside `dist\windows`. You can override the build or output directories via the script parameters (`-BuildDir`, `-OutputDir`, `-AppVersion`) if required.
+A PowerShell helper script is available under `scripts/build-windows-exe.ps1`. It configures a Release build with CMake and copy
+s the resulting executable into `dist\windows`.
