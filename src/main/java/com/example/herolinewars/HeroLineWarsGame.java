@@ -22,6 +22,9 @@ import java.awt.Graphics2D;
 import java.awt.GradientPaint;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
+import java.awt.geom.AffineTransform;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
@@ -38,9 +41,11 @@ public class HeroLineWarsGame extends JFrame {
         SOLO,
         LOCAL_VERSUS
     }
-    private static final int PANEL_WIDTH = 1280;
-    private static final int PANEL_HEIGHT = 680;
-    private static final int HERO_WIDTH = 48;
+    private static final int PANEL_WIDTH = 1440;
+    private static final int PANEL_HEIGHT = 840;
+    private static final int WORLD_WIDTH = 2400;
+    private static final int WORLD_HEIGHT = 1560;
+    private static final int HERO_WIDTH = 36;
     private static final int BASE_WIDTH = 80;
     private static final int BASE_MARGIN = 32;
     private static final int LANE_MARGIN = 30;
@@ -58,9 +63,9 @@ public class HeroLineWarsGame extends JFrame {
     private static final int INCOME_INTERVAL_TICKS = 120;
     private static final int WAVE_INTERVAL_TICKS = 240;
     private static final double UNIT_SPEED = 2.6;
-    private static final int HERO_VERTICAL_MARGIN = 14;
-    private static final int UNIT_VERTICAL_MARGIN = 8;
-    private static final int UNIT_SIZE = 28;
+    private static final int HERO_VERTICAL_MARGIN = 10;
+    private static final int UNIT_VERTICAL_MARGIN = 6;
+    private static final int UNIT_SIZE = 22;
     private static final int ATTRIBUTE_UPGRADE_COST = 120;
     private static final int UNIT_ATTACK_COOLDOWN_TICKS = 24;
     private static final int UNIT_KILL_REWARD = 6;
@@ -68,6 +73,9 @@ public class HeroLineWarsGame extends JFrame {
     private static final int EXPERIENCE_PER_UNIT_KILL = 18;
     private static final int EXPERIENCE_PER_HERO_KILL = 150;
     private static final int PORTAL_BREACH_THRESHOLD = 12;
+    private static final double CAMERA_PAN_DELTA = 120;
+    private static final boolean LOCK_HERO_TO_LANE = true;
+    private static final boolean LOCK_ENEMY_TO_LANE = true;
 
     private static final Item[] SHOP_ITEMS = new Item[] {
             new Item("Sharpened Arrows", 6, 0, 85,
@@ -161,6 +169,8 @@ public class HeroLineWarsGame extends JFrame {
     private int enemyLaneIndex;
     private boolean enemyIsHuman;
     private int activeHeroIndex;
+    private double cameraX;
+    private double cameraY;
 
     private static final int PLAYER_DEFAULT_LANE = 0;
     private static final int ENEMY_DEFAULT_LANE = LANES_PER_SIDE - 1;
@@ -530,8 +540,8 @@ public class HeroLineWarsGame extends JFrame {
         super("Hero Line Wars");
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         setLayout(new BorderLayout());
-        setPreferredSize(new Dimension(1420, 920));
-        setMinimumSize(new Dimension(1260, 820));
+        setPreferredSize(new Dimension(1580, 980));
+        setMinimumSize(new Dimension(1380, 860));
         getContentPane().setBackground(new Color(10, 14, 22));
         setLocationByPlatform(true);
 
@@ -693,7 +703,7 @@ public class HeroLineWarsGame extends JFrame {
         add(battlefieldPanel, BorderLayout.CENTER);
 
         JPanel bottomPanel = new JPanel(new BorderLayout());
-        bottomPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 16, 12, 16));
+        bottomPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 14, 8, 14));
         bottomPanel.setBackground(new Color(12, 18, 28));
 
         bottomPanel.add(createHeroInterfacePanel(), BorderLayout.WEST);
@@ -744,14 +754,14 @@ public class HeroLineWarsGame extends JFrame {
         commandPanel.setBackground(new Color(14, 20, 30));
         commandPanel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
                 javax.swing.BorderFactory.createLineBorder(new Color(32, 44, 60)),
-                javax.swing.BorderFactory.createEmptyBorder(8, 10, 8, 10)));
+                javax.swing.BorderFactory.createEmptyBorder(6, 8, 6, 8)));
 
         JPanel header = new JPanel(new BorderLayout(8, 0));
         header.setOpaque(false);
         JLabel helpLabel = new JLabel(
                 "Click to move. Use the selector to issue orders for each commander.");
         helpLabel.setForeground(new Color(210, 220, 235));
-        helpLabel.setFont(helpLabel.getFont().deriveFont(12.5f));
+        helpLabel.setFont(helpLabel.getFont().deriveFont(11.5f));
         header.add(helpLabel, BorderLayout.CENTER);
 
         playerSelector.setFocusable(false);
@@ -774,7 +784,7 @@ public class HeroLineWarsGame extends JFrame {
             stylePrimaryButton(button);
             unitButtonPanel.add(button);
         }
-        unitButtonPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 0, 6, 0));
+        unitButtonPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 0, 2, 0));
         commandPanel.add(unitButtonPanel, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new BorderLayout());
@@ -818,8 +828,8 @@ public class HeroLineWarsGame extends JFrame {
         button.setForeground(Color.WHITE);
         button.setBorder(javax.swing.BorderFactory.createCompoundBorder(
                 javax.swing.BorderFactory.createLineBorder(new Color(56, 92, 130)),
-                javax.swing.BorderFactory.createEmptyBorder(4, 10, 4, 10)));
-        button.setFont(button.getFont().deriveFont(13f));
+                javax.swing.BorderFactory.createEmptyBorder(3, 8, 3, 8)));
+        button.setFont(button.getFont().deriveFont(12f));
     }
 
     private void styleSecondaryButton(JButton button) {
@@ -828,8 +838,8 @@ public class HeroLineWarsGame extends JFrame {
         button.setForeground(new Color(235, 240, 250));
         button.setBorder(javax.swing.BorderFactory.createCompoundBorder(
                 javax.swing.BorderFactory.createLineBorder(new Color(70, 88, 110)),
-                javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8)));
-        button.setFont(button.getFont().deriveFont(12.5f));
+                javax.swing.BorderFactory.createEmptyBorder(3, 7, 3, 7)));
+        button.setFont(button.getFont().deriveFont(11.5f));
     }
 
     private void applyCategoryIcon(JLabel label, IconLibrary.Category category) {
@@ -1025,6 +1035,8 @@ public class HeroLineWarsGame extends JFrame {
         enemyTargetX = enemyX;
         enemyY = getEnemySpawnY();
         enemyTargetY = enemyY;
+
+        resetCamera();
 
         refreshPlayerSelector();
         updateQueueLabel();
@@ -1670,11 +1682,7 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private int getEnemyBaseX() {
-        int width = battlefieldPanel.getWidth();
-        if (width <= 0) {
-            width = battlefieldPanel.getPreferredSize().width;
-        }
-        return width - BASE_MARGIN - BASE_WIDTH;
+        return WORLD_WIDTH - BASE_MARGIN - BASE_WIDTH;
     }
 
     private double getPlayerSpawnX() {
@@ -1698,19 +1706,12 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private double getMovementRightLimit() {
-        int width = battlefieldPanel.getWidth();
-        if (width <= 0) {
-            width = battlefieldPanel.getPreferredSize().width;
-        }
-        double limit = width - BASE_MARGIN - HERO_WIDTH * 0.5;
+        double limit = WORLD_WIDTH - BASE_MARGIN - HERO_WIDTH * 0.5;
         return Math.max(getMovementLeftLimit(), limit);
     }
 
     private int getLaneHeight() {
-        int height = battlefieldPanel.getHeight();
-        if (height <= 0) {
-            height = battlefieldPanel.getPreferredSize().height;
-        }
+        int height = WORLD_HEIGHT;
         int laneCount = LANES_PER_SIDE * 2;
         int gapTotal = 2 * LANE_MARGIN + LANE_GAP + (LANES_PER_SIDE - 1) * INTRA_LANE_GAP * 2;
         int available = height - gapTotal;
@@ -1856,10 +1857,12 @@ public class HeroLineWarsGame extends JFrame {
         if (!heroAlive || paused || gameOver) {
             return;
         }
-        double targetX = mouseX - HERO_WIDTH / 2.0;
-        double targetY = mouseY - HERO_WIDTH / 2.0;
+        double worldX = screenToWorldX(mouseX);
+        double worldY = screenToWorldY(mouseY);
+        double targetX = worldX - HERO_WIDTH / 2.0;
+        double targetY = worldY - HERO_WIDTH / 2.0;
         double candidateX = clampHorizontalTarget(targetX);
-        int desiredLane = resolvePlayerLaneIndex(mouseY);
+        int desiredLane = resolvePlayerLaneIndex(worldY);
         if (desiredLane != heroLaneIndex && !shouldAllowPlayerLaneSwitch(candidateX)) {
             candidateX = clampHorizontalTarget(getPlayerSwitchAnchorX() - HERO_WIDTH / 2.0);
         }
@@ -1892,10 +1895,12 @@ public class HeroLineWarsGame extends JFrame {
         if (!enemyIsHuman || !enemyAlive || paused || gameOver) {
             return;
         }
-        double targetX = mouseX - HERO_WIDTH / 2.0;
-        double targetY = mouseY - HERO_WIDTH / 2.0;
+        double worldX = screenToWorldX(mouseX);
+        double worldY = screenToWorldY(mouseY);
+        double targetX = worldX - HERO_WIDTH / 2.0;
+        double targetY = worldY - HERO_WIDTH / 2.0;
         double candidateX = clampHorizontalTarget(targetX);
-        int desiredLane = resolveEnemyLaneIndex(mouseY);
+        int desiredLane = resolveEnemyLaneIndex(worldY);
         if (desiredLane != enemyLaneIndex && !shouldAllowEnemyLaneSwitch(candidateX)) {
             candidateX = clampHorizontalTarget(getEnemySwitchAnchorX() - HERO_WIDTH / 2.0);
         }
@@ -1956,11 +1961,76 @@ public class HeroLineWarsGame extends JFrame {
         }
     }
 
+    private void panCamera(double deltaX, double deltaY) {
+        cameraX = clamp(cameraX + deltaX, 0, getMaxCameraX());
+        cameraY = clamp(cameraY + deltaY, 0, getMaxCameraY());
+        battlefieldPanel.repaint();
+    }
+
+    private void centerCameraOn(double worldX, double worldY) {
+        int viewWidth = getCurrentViewWidth();
+        int viewHeight = getCurrentViewHeight();
+        double targetX = worldX - viewWidth / 2.0;
+        double targetY = worldY - viewHeight / 2.0;
+        cameraX = clamp(targetX, 0, getMaxCameraX());
+        cameraY = clamp(targetY, 0, getMaxCameraY());
+        battlefieldPanel.repaint();
+    }
+
+    private void resetCamera() {
+        centerCameraOn(heroX + HERO_WIDTH / 2.0, heroY + HERO_WIDTH / 2.0);
+    }
+
+    private void ensureCameraWithinBounds() {
+        double newCameraX = clamp(cameraX, 0, getMaxCameraX());
+        double newCameraY = clamp(cameraY, 0, getMaxCameraY());
+        if (newCameraX != cameraX || newCameraY != cameraY) {
+            cameraX = newCameraX;
+            cameraY = newCameraY;
+            battlefieldPanel.repaint();
+        }
+    }
+
+    private int getCurrentViewWidth() {
+        int width = battlefieldPanel.getWidth();
+        if (width <= 0) {
+            width = battlefieldPanel.getPreferredSize().width;
+        }
+        return Math.max(1, width);
+    }
+
+    private int getCurrentViewHeight() {
+        int height = battlefieldPanel.getHeight();
+        if (height <= 0) {
+            height = battlefieldPanel.getPreferredSize().height;
+        }
+        return Math.max(1, height);
+    }
+
+    private double getMaxCameraX() {
+        return Math.max(0, WORLD_WIDTH - getCurrentViewWidth());
+    }
+
+    private double getMaxCameraY() {
+        return Math.max(0, WORLD_HEIGHT - getCurrentViewHeight());
+    }
+
+    private double screenToWorldX(double screenX) {
+        return cameraX + screenX;
+    }
+
+    private double screenToWorldY(double screenY) {
+        return cameraY + screenY;
+    }
+
     private boolean shouldAllowPlayerLaneSwitch() {
         return shouldAllowPlayerLaneSwitch(heroTargetX);
     }
 
     private boolean shouldAllowPlayerLaneSwitch(double candidateTargetX) {
+        if (LOCK_HERO_TO_LANE) {
+            return false;
+        }
         double heroCenterX = heroX + HERO_WIDTH / 2.0;
         double candidateCenterX = candidateTargetX + HERO_WIDTH / 2.0;
         return isInPlayerSwitchZone(heroCenterX) || isInPlayerSwitchZone(candidateCenterX);
@@ -1971,6 +2041,9 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private boolean shouldAllowEnemyLaneSwitch(double candidateTargetX) {
+        if (LOCK_ENEMY_TO_LANE) {
+            return false;
+        }
         double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
         double candidateCenterX = candidateTargetX + HERO_WIDTH / 2.0;
         return isInEnemySwitchZone(enemyCenterX) || isInEnemySwitchZone(candidateCenterX);
@@ -2097,6 +2170,12 @@ public class HeroLineWarsGame extends JFrame {
             addMouseListener(adapter);
             addMouseMotionListener(adapter);
             setupKeyBindings();
+            addComponentListener(new ComponentAdapter() {
+                @Override
+                public void componentResized(ComponentEvent e) {
+                    ensureCameraWithinBounds();
+                }
+            });
         }
 
         private void handleClick(MouseEvent e) {
@@ -2151,6 +2230,11 @@ public class HeroLineWarsGame extends JFrame {
             javax.swing.KeyStroke enemyDown = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_DOWN, 0);
             javax.swing.KeyStroke pauseKey = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_ESCAPE, 0);
             javax.swing.KeyStroke pauseKeyAlt = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_P, 0);
+            javax.swing.KeyStroke panLeft = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_Q, 0);
+            javax.swing.KeyStroke panRight = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_E, 0);
+            javax.swing.KeyStroke panUp = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_R, 0);
+            javax.swing.KeyStroke panDown = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_F, 0);
+            javax.swing.KeyStroke centerKey = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_C, 0);
 
             inputMap.put(left, "moveLeft");
             inputMap.put(right, "moveRight");
@@ -2162,6 +2246,11 @@ public class HeroLineWarsGame extends JFrame {
             inputMap.put(enemyDown, "enemyMoveDown");
             inputMap.put(pauseKey, "pause");
             inputMap.put(pauseKeyAlt, "pause");
+            inputMap.put(panLeft, "cameraLeft");
+            inputMap.put(panRight, "cameraRight");
+            inputMap.put(panUp, "cameraUp");
+            inputMap.put(panDown, "cameraDown");
+            inputMap.put(centerKey, "cameraCenter");
 
             actionMap.put("moveLeft", new javax.swing.AbstractAction() {
                 @Override
@@ -2219,6 +2308,36 @@ public class HeroLineWarsGame extends JFrame {
                     }
                 }
             });
+            actionMap.put("cameraLeft", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    panCamera(-CAMERA_PAN_DELTA, 0);
+                }
+            });
+            actionMap.put("cameraRight", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    panCamera(CAMERA_PAN_DELTA, 0);
+                }
+            });
+            actionMap.put("cameraUp", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    panCamera(0, -CAMERA_PAN_DELTA);
+                }
+            });
+            actionMap.put("cameraDown", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    panCamera(0, CAMERA_PAN_DELTA);
+                }
+            });
+            actionMap.put("cameraCenter", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    centerCameraOn(heroX + HERO_WIDTH / 2.0, heroY + HERO_WIDTH / 2.0);
+                }
+            });
             actionMap.put("pause", new javax.swing.AbstractAction() {
                 @Override
                 public void actionPerformed(java.awt.event.ActionEvent e) {
@@ -2233,16 +2352,25 @@ public class HeroLineWarsGame extends JFrame {
             Graphics2D g2 = (Graphics2D) g.create();
             g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
-            int width = getWidth();
-            if (width <= 0) {
-                width = getPreferredSize().width;
+            int viewWidth = getWidth();
+            if (viewWidth <= 0) {
+                viewWidth = getPreferredSize().width;
             }
-            int height = getHeight();
-            GradientPaint background = new GradientPaint(0, 0, new Color(16, 28, 32), 0, height,
+            int viewHeight = getHeight();
+            if (viewHeight <= 0) {
+                viewHeight = getPreferredSize().height;
+            }
+            GradientPaint background = new GradientPaint(0, 0, new Color(16, 28, 32), 0, viewHeight,
                     new Color(6, 14, 18));
             g2.setPaint(background);
-            g2.fillRect(0, 0, width, height);
+            g2.fillRect(0, 0, viewWidth, viewHeight);
             g2.setPaint(null);
+
+            AffineTransform originalTransform = g2.getTransform();
+            g2.translate(-cameraX, -cameraY);
+
+            int width = WORLD_WIDTH;
+            int height = WORLD_HEIGHT;
             int laneHeight = getLaneHeight();
             int clusterHeight = getClusterHeight();
             int playerClusterTop = getPlayerClusterTop();
@@ -2303,9 +2431,11 @@ public class HeroLineWarsGame extends JFrame {
                 drawProjectile(g2, projectile);
             }
 
-            drawQueuedUnitsOverlay(g2, width);
+            g2.setTransform(originalTransform);
+
+            drawQueuedUnitsOverlay(g2, viewWidth);
             if (paused) {
-                drawPauseOverlay(g2, width, getHeight());
+                drawPauseOverlay(g2, viewWidth, viewHeight);
             }
 
             g2.dispose();
@@ -2340,7 +2470,7 @@ public class HeroLineWarsGame extends JFrame {
         }
 
         private void drawLaneSurface(Graphics2D g2, int width, int laneTop, int laneHeight) {
-            int height = getHeight() <= 0 ? getPreferredSize().height : getHeight();
+            int height = WORLD_HEIGHT;
             int leftBoundary = getPlayerBaseX() + BASE_WIDTH + 18;
             int rightBoundary = getEnemyBaseX() - 18;
             int topY = laneTop;
@@ -2762,7 +2892,17 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private UnitInstance createUnitInstance(UnitType type, boolean fromPlayer, int laneIndex) {
-        double spawnX = fromPlayer ? getPlayerBaseX() + BASE_WIDTH + 8 : getEnemyBaseX() - UNIT_SIZE - 8;
+        double spawnXMin;
+        double spawnXMax;
+        if (fromPlayer) {
+            spawnXMin = getPlayerBaseX() + BASE_WIDTH + 6;
+            spawnXMax = Math.min(getEnemyBaseX() - UNIT_SIZE - 12, spawnXMin + 90);
+        } else {
+            spawnXMax = getEnemyBaseX() - UNIT_SIZE - 6;
+            spawnXMin = Math.max(getPlayerBaseX() + BASE_WIDTH + 12, spawnXMax - 90);
+        }
+        double horizontalSpan = Math.max(0, spawnXMax - spawnXMin);
+        double spawnX = spawnXMin + (horizontalSpan <= 0 ? 0 : random.nextDouble() * horizontalSpan);
         double laneTop = fromPlayer ? getEnemyLaneTop(laneIndex) : getPlayerLaneTop(laneIndex);
         int laneHeight = getLaneHeight();
         double topLimit = laneTop + UNIT_VERTICAL_MARGIN;
@@ -2770,7 +2910,8 @@ public class HeroLineWarsGame extends JFrame {
         if (bottomLimit < topLimit) {
             bottomLimit = topLimit;
         }
-        double spawnY = topLimit + (bottomLimit - topLimit) / 2.0;
+        double verticalSpan = Math.max(0, bottomLimit - topLimit);
+        double spawnY = topLimit + (verticalSpan <= 0 ? 0 : random.nextDouble() * verticalSpan);
         return new UnitInstance(type, spawnX, spawnY, topLimit, bottomLimit, fromPlayer, laneIndex);
     }
 
