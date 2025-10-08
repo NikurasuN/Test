@@ -15,6 +15,8 @@ ve.
 
 ### Windows (.NET single-file build)
 
+> **Prerequisite:** Install the [.NET 6 SDK](https://dotnet.microsoft.com/en-us/download) if the `dotnet` command is not already available on your `PATH`. You can verify the installation with `dotnet --version` from a new terminal session.
+
 The repository ships with a C# console port that can be published as a standalone Windows executable. From any machine with the .NET 6 SDK installed, run:
 
 ```bash
