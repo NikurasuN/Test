@@ -3,6 +3,8 @@ package com.example.herolinewars;
 import javax.swing.AbstractButton;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
+import javax.swing.JCheckBox;
+import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -51,8 +53,8 @@ public class HeroLineWarsGame extends JFrame {
         SOLO,
         LOCAL_VERSUS
     }
-    private static final int PANEL_WIDTH = 1440;
-    private static final int PANEL_HEIGHT = 840;
+    private static final int DEFAULT_PANEL_WIDTH = 1440;
+    private static final int DEFAULT_PANEL_HEIGHT = 840;
     private static final int WORLD_WIDTH = 2400;
     private static final int WORLD_HEIGHT = 1560;
     private static final int HERO_WIDTH = 36;
@@ -89,6 +91,7 @@ public class HeroLineWarsGame extends JFrame {
     private static final double CAMERA_MAX_ZOOM = 1.8;
     private static final boolean LOCK_HERO_TO_LANE = true;
     private static final boolean LOCK_ENEMY_TO_LANE = true;
+    private static final double UNIT_SIGHT_RANGE_MULTIPLIER = 1.35;
 
     private static final Item[] SHOP_ITEMS = new Item[] {
             new Item("Sharpened Arrows", 6, 0, 85,
@@ -189,6 +192,12 @@ public class HeroLineWarsGame extends JFrame {
     private double cameraX;
     private double cameraY;
     private double cameraZoom = 1.0;
+    private int panelWidth = DEFAULT_PANEL_WIDTH;
+    private int panelHeight = DEFAULT_PANEL_HEIGHT;
+    private boolean showControlsHint = true;
+    private boolean showInventoryLabel = true;
+    private boolean showActionSummary = true;
+    private boolean showQueueStatus = true;
 
     private static final int PLAYER_DEFAULT_LANE = 0;
     private static final int ENEMY_DEFAULT_LANE = LANES_PER_SIDE - 1;
@@ -560,8 +569,15 @@ public class HeroLineWarsGame extends JFrame {
         dialog.add(header, BorderLayout.NORTH);
 
         List<UnitBalanceEditor> unitEditors = new ArrayList<>();
+        WindowSettingsEditor windowEditor = new WindowSettingsEditor();
+        UiSettingsEditor uiEditor = new UiSettingsEditor();
+        HeroSettingsEditor heroEditor = new HeroSettingsEditor();
+
         JTabbedPane tabs = new JTabbedPane();
         tabs.addTab("Units", createUnitBalanceTab(unitEditors));
+        tabs.addTab("Window", windowEditor.getComponent());
+        tabs.addTab("UI", uiEditor.getComponent());
+        tabs.addTab("Hero", heroEditor.getComponent());
         dialog.add(tabs, BorderLayout.CENTER);
 
         JButton applyButton = new JButton("Apply Changes");
@@ -569,7 +585,10 @@ public class HeroLineWarsGame extends JFrame {
             for (UnitBalanceEditor editor : unitEditors) {
                 editor.applyTo(getUnitBalance(editor.getType()));
             }
-            onUnitBalanceUpdated("Developer unit tuning applied.");
+            windowEditor.apply();
+            uiEditor.apply();
+            heroEditor.apply();
+            finalizeDeveloperUpdate("Developer settings applied.");
         });
 
         JButton resetButton = new JButton("Reset to Defaults");
@@ -581,7 +600,10 @@ public class HeroLineWarsGame extends JFrame {
                     editor.applyTo(getUnitBalance(editor.getType()));
                 }
             }
-            onUnitBalanceUpdated("Unit stats reset to defaults.");
+            windowEditor.resetToDefaults();
+            uiEditor.resetToDefaults();
+            heroEditor.resetToDefaults();
+            finalizeDeveloperUpdate("Developer settings reset to defaults.");
         });
 
         JButton closeButton = new JButton("Close");
@@ -635,10 +657,19 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private void onUnitBalanceUpdated(String message) {
+        finalizeDeveloperUpdate(message);
+    }
+
+    private void finalizeDeveloperUpdate(String message) {
+        lastActionMessage = message;
         refreshUnitButtons();
         clampExistingUnitsToBalance();
-        lastActionMessage = message;
+        applyUiVisibility();
         refreshHud();
+        if (playerHero == null || aiHero == null) {
+            actionLabel.setText(lastActionMessage);
+        }
+        battlefieldPanel.revalidate();
         battlefieldPanel.repaint();
     }
 
@@ -943,6 +974,7 @@ public class HeroLineWarsGame extends JFrame {
 
         updateHeroInterface();
         refreshControlsHint();
+        applyUiVisibility();
     }
 
     private void refreshPlayerSelector() {
@@ -975,6 +1007,22 @@ public class HeroLineWarsGame extends JFrame {
         builder.append(bullet).append("Zoom: +/- or Mouse Wheel");
         builder.append(bullet).append("Pause: Esc/P");
         controlsHintLabel.setText(builder.toString());
+    }
+
+    private void applyUiVisibility() {
+        queueLabel.setVisible(showQueueStatus);
+        inventoryLabel.setVisible(showInventoryLabel);
+        controlsHintLabel.setVisible(showControlsHint);
+        actionLabel.setVisible(showActionSummary);
+    }
+
+    private void applyPanelDimensions(int width, int height) {
+        panelWidth = Math.max(640, width);
+        panelHeight = Math.max(480, height);
+        Dimension dimension = new Dimension(panelWidth, panelHeight);
+        battlefieldPanel.setPreferredSize(dimension);
+        battlefieldPanel.revalidate();
+        pack();
     }
 
     private Hero getActiveHero() {
@@ -2467,7 +2515,7 @@ public class HeroLineWarsGame extends JFrame {
 
     private class BattlefieldPanel extends JPanel {
         BattlefieldPanel() {
-            setPreferredSize(new Dimension(PANEL_WIDTH, PANEL_HEIGHT));
+            setPreferredSize(new Dimension(panelWidth, panelHeight));
             setBackground(new Color(8, 12, 18));
             setFocusable(true);
 
@@ -3288,8 +3336,33 @@ public class HeroLineWarsGame extends JFrame {
             spawnXMax = getEnemyBaseX() - UNIT_SIZE - 6;
             spawnXMin = Math.max(getPlayerBaseX() + BASE_WIDTH + 12, spawnXMax - 90);
         }
-        double horizontalSpan = Math.max(0, spawnXMax - spawnXMin);
-        double spawnX = spawnXMin + (horizontalSpan <= 0 ? 0 : random.nextDouble() * horizontalSpan);
+        double spawnX;
+        double spacing = UNIT_SIZE + 6;
+        if (fromPlayer) {
+            double minX = Double.POSITIVE_INFINITY;
+            for (UnitInstance existing : playerUnits) {
+                if (existing.getLaneIndex() == laneIndex) {
+                    minX = Math.min(minX, existing.x);
+                }
+            }
+            if (minX != Double.POSITIVE_INFINITY) {
+                spawnX = Math.max(spawnXMin, Math.min(minX - spacing, spawnXMax));
+            } else {
+                spawnX = spawnXMin;
+            }
+        } else {
+            double maxX = Double.NEGATIVE_INFINITY;
+            for (UnitInstance existing : enemyUnits) {
+                if (existing.getLaneIndex() == laneIndex) {
+                    maxX = Math.max(maxX, existing.x);
+                }
+            }
+            if (maxX != Double.NEGATIVE_INFINITY) {
+                spawnX = Math.min(spawnXMax, Math.max(maxX + UNIT_SIZE + 6, spawnXMin));
+            } else {
+                spawnX = spawnXMax;
+            }
+        }
         double laneTop = fromPlayer ? getEnemyLaneTop(laneIndex) : getPlayerLaneTop(laneIndex);
         int laneHeight = getLaneHeight();
         double topLimit = laneTop + UNIT_VERTICAL_MARGIN;
@@ -3315,33 +3388,56 @@ public class HeroLineWarsGame extends JFrame {
         if (heroAlive) {
             for (UnitInstance unit : enemyUnits) {
                 if (unit.getLaneIndex() != heroLaneIndex) {
+                    unit.clearHeroFocus();
                     continue;
                 }
-                if (unit.isInRange(heroCenterX, heroCenterY)) {
-                    unit.engage();
-                    unit.setTargetCenterY(heroCenterY);
-                    if (unit.tryAttackHero(playerHero)) {
-                        lastActionMessage = String.format("%s was overwhelmed defending the lane!", playerHero.getName());
-                        onPlayerHeroDefeated();
-                        break;
+                double distanceToHero = distance(unit.getCenterX(), unit.getCenterY(), heroCenterX, heroCenterY);
+                double sightRange = unit.getRange() * UNIT_SIGHT_RANGE_MULTIPLIER;
+                if (distanceToHero <= sightRange) {
+                    unit.focusHero(heroCenterX, heroCenterY);
+                    if (distanceToHero <= unit.getRange()) {
+                        unit.engage();
+                        if (unit.tryAttackHero(playerHero)) {
+                            lastActionMessage = String.format("%s was overwhelmed defending the lane!",
+                                    playerHero.getName());
+                            onPlayerHeroDefeated();
+                            break;
+                        }
                     }
+                } else {
+                    unit.clearHeroFocus();
                 }
+            }
+        } else {
+            for (UnitInstance unit : enemyUnits) {
+                unit.clearHeroFocus();
             }
         }
 
         if (enemyAlive) {
             for (UnitInstance unit : playerUnits) {
                 if (unit.getLaneIndex() != enemyLaneIndex) {
+                    unit.clearHeroFocus();
                     continue;
                 }
-                if (unit.isInRange(enemyCenterX, enemyCenterY)) {
-                    unit.engage();
-                    unit.setTargetCenterY(enemyCenterY);
-                    if (unit.tryAttackHero(aiHero)) {
-                        onEnemyHeroDefeated();
-                        break;
+                double distanceToEnemy = distance(unit.getCenterX(), unit.getCenterY(), enemyCenterX, enemyCenterY);
+                double sightRange = unit.getRange() * UNIT_SIGHT_RANGE_MULTIPLIER;
+                if (distanceToEnemy <= sightRange) {
+                    unit.focusHero(enemyCenterX, enemyCenterY);
+                    if (distanceToEnemy <= unit.getRange()) {
+                        unit.engage();
+                        if (unit.tryAttackHero(aiHero)) {
+                            onEnemyHeroDefeated();
+                            break;
+                        }
                     }
+                } else {
+                    unit.clearHeroFocus();
                 }
+            }
+        } else {
+            for (UnitInstance unit : playerUnits) {
+                unit.clearHeroFocus();
             }
         }
 
@@ -3619,6 +3715,347 @@ public class HeroLineWarsGame extends JFrame {
         }
     }
 
+    private class WindowSettingsEditor {
+        private final JPanel panel;
+        private final JSpinner widthSpinner;
+        private final JSpinner heightSpinner;
+        private final JCheckBox resizableCheck;
+
+        WindowSettingsEditor() {
+            panel = new JPanel();
+            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+            panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(12, 12, 12, 12));
+            panel.setOpaque(false);
+
+            JLabel description = new JLabel("Control the battlefield viewport.");
+            description.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 8, 0));
+            panel.add(description);
+
+            JPanel grid = new JPanel(new GridLayout(0, 2, 10, 6));
+            grid.setOpaque(false);
+
+            widthSpinner = new JSpinner(new SpinnerNumberModel(panelWidth, 800, 3840, 20));
+            heightSpinner = new JSpinner(new SpinnerNumberModel(panelHeight, 600, 2160, 20));
+            resizableCheck = new JCheckBox("Allow window resizing");
+            resizableCheck.setSelected(isResizable());
+            resizableCheck.setOpaque(false);
+
+            grid.add(new JLabel("Viewport Width:"));
+            grid.add(widthSpinner);
+            grid.add(new JLabel("Viewport Height:"));
+            grid.add(heightSpinner);
+
+            panel.add(grid);
+            panel.add(javax.swing.Box.createVerticalStrut(8));
+            panel.add(resizableCheck);
+            panel.add(javax.swing.Box.createVerticalGlue());
+        }
+
+        JComponent getComponent() {
+            return panel;
+        }
+
+        void apply() {
+            applyPanelDimensions((Integer) widthSpinner.getValue(), (Integer) heightSpinner.getValue());
+            setResizable(resizableCheck.isSelected());
+        }
+
+        void resetToDefaults() {
+            widthSpinner.setValue(DEFAULT_PANEL_WIDTH);
+            heightSpinner.setValue(DEFAULT_PANEL_HEIGHT);
+            resizableCheck.setSelected(true);
+            apply();
+        }
+    }
+
+    private class UiSettingsEditor {
+        private final JPanel panel;
+        private final JCheckBox queueCheck;
+        private final JCheckBox inventoryCheck;
+        private final JCheckBox controlsCheck;
+        private final JCheckBox actionCheck;
+
+        UiSettingsEditor() {
+            panel = new JPanel();
+            panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+            panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(12, 12, 12, 12));
+            panel.setOpaque(false);
+
+            JLabel description = new JLabel("Toggle HUD panels for rapid iteration.");
+            description.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 8, 0));
+            panel.add(description);
+
+            queueCheck = createCheckbox("Show queue status", showQueueStatus);
+            inventoryCheck = createCheckbox("Show inventory summary", showInventoryLabel);
+            controlsCheck = createCheckbox("Show controls helper", showControlsHint);
+            actionCheck = createCheckbox("Show action ticker", showActionSummary);
+
+            panel.add(queueCheck);
+            panel.add(inventoryCheck);
+            panel.add(controlsCheck);
+            panel.add(actionCheck);
+            panel.add(javax.swing.Box.createVerticalGlue());
+        }
+
+        private JCheckBox createCheckbox(String label, boolean selected) {
+            JCheckBox checkBox = new JCheckBox(label, selected);
+            checkBox.setOpaque(false);
+            return checkBox;
+        }
+
+        JComponent getComponent() {
+            return panel;
+        }
+
+        void apply() {
+            showQueueStatus = queueCheck.isSelected();
+            showInventoryLabel = inventoryCheck.isSelected();
+            showControlsHint = controlsCheck.isSelected();
+            showActionSummary = actionCheck.isSelected();
+        }
+
+        void resetToDefaults() {
+            queueCheck.setSelected(true);
+            inventoryCheck.setSelected(true);
+            controlsCheck.setSelected(true);
+            actionCheck.setSelected(true);
+            apply();
+        }
+    }
+
+    private class HeroSettingsEditor {
+        private final JScrollPane component;
+        private final JPanel content;
+        private final HeroConfigEditor playerEditor;
+        private final HeroConfigEditor enemyEditor;
+        private HeroSnapshot playerBaseline;
+        private HeroSnapshot enemyBaseline;
+
+        HeroSettingsEditor() {
+            content = new JPanel();
+            content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+            content.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 12, 10, 12));
+            content.setOpaque(false);
+
+            playerEditor = new HeroConfigEditor("Player 1 Hero");
+            enemyEditor = new HeroConfigEditor(enemyIsHuman ? "Player 2 Hero" : "Enemy Hero");
+
+            content.add(playerEditor.getPanel());
+            content.add(javax.swing.Box.createVerticalStrut(12));
+            content.add(enemyEditor.getPanel());
+            content.add(javax.swing.Box.createVerticalGlue());
+
+            component = new JScrollPane(content);
+            component.setBorder(javax.swing.BorderFactory.createEmptyBorder());
+            component.getVerticalScrollBar().setUnitIncrement(16);
+
+            playerBaseline = playerHero != null ? HeroSnapshot.from(playerHero) : null;
+            enemyBaseline = aiHero != null ? HeroSnapshot.from(aiHero) : null;
+            refreshEditors();
+        }
+
+        private void refreshEditors() {
+            if (playerHero != null && playerBaseline == null) {
+                playerBaseline = HeroSnapshot.from(playerHero);
+            }
+            if (aiHero != null && enemyBaseline == null) {
+                enemyBaseline = HeroSnapshot.from(aiHero);
+            }
+            playerEditor.setHeader("Player 1 Hero");
+            playerEditor.loadFrom(playerHero);
+            enemyEditor.setHeader(enemyIsHuman ? "Player 2 Hero" : "Enemy Hero");
+            enemyEditor.loadFrom(aiHero);
+        }
+
+        void apply() {
+            playerEditor.applyTo(playerHero);
+            enemyEditor.applyTo(aiHero);
+            refreshEditors();
+        }
+
+        void resetToDefaults() {
+            if (playerBaseline != null && playerHero != null) {
+                playerBaseline.applyTo(playerHero);
+            }
+            if (enemyBaseline != null && aiHero != null) {
+                enemyBaseline.applyTo(aiHero);
+            }
+            refreshEditors();
+        }
+
+        JComponent getComponent() {
+            return component;
+        }
+    }
+
+    private class HeroConfigEditor {
+        private final JPanel panel;
+        private final JLabel headerLabel;
+        private final JLabel statusLabel;
+        private final JPanel fieldsPanel;
+        private final JPanel gridPanel;
+        private final JSpinner strengthSpinner;
+        private final JSpinner dexteritySpinner;
+        private final JSpinner intelligenceSpinner;
+        private final JSpinner goldSpinner;
+        private final JSpinner incomeSpinner;
+        private final JSpinner healthSpinner;
+        private final JSpinner shieldSpinner;
+        private boolean heroAvailable;
+
+        HeroConfigEditor(String header) {
+            panel = new JPanel(new BorderLayout(8, 6));
+            panel.setOpaque(false);
+            panel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                    javax.swing.BorderFactory.createLineBorder(new Color(45, 62, 88)),
+                    javax.swing.BorderFactory.createEmptyBorder(8, 10, 8, 10)));
+
+            headerLabel = new JLabel(header);
+            headerLabel.setFont(headerLabel.getFont().deriveFont(Font.BOLD, 14f));
+            panel.add(headerLabel, BorderLayout.NORTH);
+
+            fieldsPanel = new JPanel();
+            fieldsPanel.setOpaque(false);
+            fieldsPanel.setLayout(new BoxLayout(fieldsPanel, BoxLayout.Y_AXIS));
+
+            statusLabel = new JLabel("Hero not available.");
+            statusLabel.setForeground(new Color(200, 210, 230));
+            statusLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 6, 0));
+            fieldsPanel.add(statusLabel);
+
+            gridPanel = new JPanel(new GridLayout(0, 2, 10, 6));
+            gridPanel.setOpaque(false);
+
+            strengthSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999, 1));
+            dexteritySpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999, 1));
+            intelligenceSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 999, 1));
+            goldSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 5000, 10));
+            incomeSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 500, 1));
+            healthSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 3000, 5));
+            shieldSpinner = new JSpinner(new SpinnerNumberModel(0, 0, 3000, 5));
+
+            addLabeledSpinner(gridPanel, "Strength", strengthSpinner);
+            addLabeledSpinner(gridPanel, "Dexterity", dexteritySpinner);
+            addLabeledSpinner(gridPanel, "Intelligence", intelligenceSpinner);
+            addLabeledSpinner(gridPanel, "Gold", goldSpinner);
+            addLabeledSpinner(gridPanel, "Income", incomeSpinner);
+            addLabeledSpinner(gridPanel, "Current Health", healthSpinner);
+            addLabeledSpinner(gridPanel, "Current Shield", shieldSpinner);
+
+            fieldsPanel.add(gridPanel);
+            panel.add(fieldsPanel, BorderLayout.CENTER);
+        }
+
+        private void addLabeledSpinner(JPanel container, String label, JSpinner spinner) {
+            JLabel fieldLabel = new JLabel(label + ":");
+            container.add(fieldLabel);
+            container.add(spinner);
+        }
+
+        JPanel getPanel() {
+            return panel;
+        }
+
+        void setHeader(String text) {
+            headerLabel.setText(text);
+        }
+
+        void loadFrom(Hero hero) {
+            heroAvailable = hero != null;
+            setContainerEnabled(gridPanel, heroAvailable);
+            if (!heroAvailable) {
+                statusLabel.setText("Hero not available.");
+                return;
+            }
+
+            statusLabel.setText(String.format("Editing %s (Lv %d)", hero.getName(), hero.getLevel()));
+
+            updateSpinner(strengthSpinner, hero.getStrength());
+            updateSpinner(dexteritySpinner, hero.getDexterity());
+            updateSpinner(intelligenceSpinner, hero.getIntelligence());
+            updateSpinner(goldSpinner, hero.getGold());
+            updateSpinner(incomeSpinner, hero.getIncome());
+            updateSpinner(healthSpinner, Math.max(0, hero.getCurrentHealth()), hero.getMaxHealth());
+            updateSpinner(shieldSpinner, Math.max(0, hero.getCurrentShield()), hero.getMaxEnergyShield());
+        }
+
+        void applyTo(Hero hero) {
+            if (!heroAvailable || hero == null) {
+                return;
+            }
+            int desiredStrength = (Integer) strengthSpinner.getValue();
+            int desiredDexterity = (Integer) dexteritySpinner.getValue();
+            int desiredIntelligence = (Integer) intelligenceSpinner.getValue();
+            int baseStrength = Math.max(0, desiredStrength - hero.getItemStrengthBonus());
+            int baseDexterity = Math.max(0, desiredDexterity - hero.getItemDexterityBonus());
+            int baseIntelligence = Math.max(0, desiredIntelligence - hero.getItemIntelligenceBonus());
+            hero.developerSetBaseAttributes(baseStrength, baseDexterity, baseIntelligence);
+            hero.developerSetGold((Integer) goldSpinner.getValue());
+            hero.developerSetIncome((Integer) incomeSpinner.getValue());
+            hero.developerSetCurrentHealth((Integer) healthSpinner.getValue());
+            hero.developerSetCurrentShield((Integer) shieldSpinner.getValue());
+            loadFrom(hero);
+        }
+
+        private void updateSpinner(JSpinner spinner, int value) {
+            updateSpinner(spinner, value, Math.max(value, 999));
+        }
+
+        private void updateSpinner(JSpinner spinner, int value, int max) {
+            SpinnerNumberModel model = (SpinnerNumberModel) spinner.getModel();
+            int sanitizedMax = Math.max(0, max);
+            model.setMinimum(Integer.valueOf(0));
+            model.setMaximum(Integer.valueOf(sanitizedMax));
+            int clampedValue = Math.max(((Number) model.getMinimum()).intValue(),
+                    Math.min(value, ((Number) model.getMaximum()).intValue()));
+            spinner.setValue(clampedValue);
+        }
+
+        private void setContainerEnabled(java.awt.Container container, boolean enabled) {
+            for (Component component : container.getComponents()) {
+                component.setEnabled(enabled);
+                if (component instanceof java.awt.Container) {
+                    setContainerEnabled((java.awt.Container) component, enabled);
+                }
+            }
+        }
+    }
+
+    private static final class HeroSnapshot {
+        private final int baseStrength;
+        private final int baseDexterity;
+        private final int baseIntelligence;
+        private final int gold;
+        private final int income;
+        private final int currentHealth;
+        private final int currentShield;
+
+        private HeroSnapshot(int baseStrength, int baseDexterity, int baseIntelligence,
+                int gold, int income, int currentHealth, int currentShield) {
+            this.baseStrength = baseStrength;
+            this.baseDexterity = baseDexterity;
+            this.baseIntelligence = baseIntelligence;
+            this.gold = gold;
+            this.income = income;
+            this.currentHealth = currentHealth;
+            this.currentShield = currentShield;
+        }
+
+        static HeroSnapshot from(Hero hero) {
+            return new HeroSnapshot(hero.getBaseStrength(), hero.getBaseDexterity(), hero.getBaseIntelligence(),
+                    hero.getGold(), hero.getIncome(), Math.max(0, hero.getCurrentHealth()),
+                    Math.max(0, hero.getCurrentShield()));
+        }
+
+        void applyTo(Hero hero) {
+            hero.developerSetBaseAttributes(baseStrength, baseDexterity, baseIntelligence);
+            hero.developerSetGold(gold);
+            hero.developerSetIncome(income);
+            hero.developerSetCurrentHealth(currentHealth);
+            hero.developerSetCurrentShield(currentShield);
+        }
+    }
+
     private static final class HeroTarget {
         private final HeroLineWarsGame.UnitInstance unit;
         private final boolean heroTarget;
@@ -3821,6 +4258,8 @@ public class HeroLineWarsGame extends JFrame {
         private double topLimit;
         private double bottomLimit;
         private double laneCenter;
+        private boolean focusingHero;
+        private double heroFocusCenterX;
 
         UnitInstance(UnitType type, UnitBalance balance, double x, double y, double topLimit, double bottomLimit,
                 boolean fromPlayer, int laneIndex) {
@@ -3835,6 +4274,7 @@ public class HeroLineWarsGame extends JFrame {
             this.spawnShield = SPAWN_SHIELD_TICKS;
             updateLaneBounds(topLimit, bottomLimit);
             this.targetY = clamp(y, this.topLimit, this.bottomLimit);
+            this.heroFocusCenterX = getCenterX();
         }
 
         int getLaneIndex() {
@@ -3852,7 +4292,7 @@ public class HeroLineWarsGame extends JFrame {
             if (spawnShield > 0) {
                 spawnShield--;
             }
-            if (!engagedLastTick) {
+            if (!engagedLastTick && !focusingHero) {
                 targetY = laneCenter;
             }
         }
@@ -3860,6 +4300,18 @@ public class HeroLineWarsGame extends JFrame {
         void advance(double speed, double clampPosition) {
             double verticalSpeed = Math.max(1.2, Math.abs(speed));
             y = clamp(approach(y, targetY, verticalSpeed), topLimit, bottomLimit);
+            if (focusingHero) {
+                double horizontalSpeed = Math.max(1.2, Math.abs(speed));
+                double newCenterX = approach(getCenterX(), heroFocusCenterX, horizontalSpeed);
+                double newX = newCenterX - UNIT_SIZE / 2.0;
+                if (fromPlayer) {
+                    newX = Math.min(newX, clampPosition);
+                } else {
+                    newX = Math.max(newX, clampPosition);
+                }
+                x = newX;
+                return;
+            }
             if (engaged || engagedLastTick) {
                 return;
             }
@@ -3940,6 +4392,16 @@ public class HeroLineWarsGame extends JFrame {
 
         void setTargetCenterY(double centerY) {
             targetY = clamp(centerY - UNIT_SIZE / 2.0, topLimit, bottomLimit);
+        }
+
+        void focusHero(double heroCenterX, double heroCenterY) {
+            focusingHero = true;
+            heroFocusCenterX = heroCenterX;
+            setTargetCenterY(heroCenterY);
+        }
+
+        void clearHeroFocus() {
+            focusingHero = false;
         }
 
         boolean isInRange(UnitInstance other) {
