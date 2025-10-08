@@ -56,7 +56,7 @@ public class HeroLineWarsGame extends JFrame {
     private static final int WORLD_WIDTH = 2400;
     private static final int WORLD_HEIGHT = 1560;
     private static final int HERO_WIDTH = 36;
-    private static final int BASE_WIDTH = 80;
+    private static final int BASE_WIDTH = 120;
     private static final int BASE_MARGIN = 32;
     private static final int LANE_MARGIN = 30;
     private static final int LANE_GAP = 80;
