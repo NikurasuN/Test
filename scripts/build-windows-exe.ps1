@@ -36,15 +36,22 @@ if (-not (Test-Path $OutputDir)) {
     New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 }
 
-$executable = Join-Path $BuildDir 'hero_line_wars.exe'
-if (-not (Test-Path $executable)) {
-    $altPath = Join-Path $BuildDir 'Release/hero_line_wars.exe'
-    if (Test-Path $altPath) {
-        $executable = $altPath
-    } else {
-        throw "Could not locate hero_line_wars.exe in the build directory."
-    }
-}
+$executables = @('hero_line_wars.exe', 'run_game.exe')
 
-Copy-Item $executable -Destination $OutputDir -Force
-Write-Host "Executable copied to $OutputDir"
+foreach ($name in $executables) {
+    $exePath = Join-Path $BuildDir $name
+    if (-not (Test-Path $exePath)) {
+        $altPath = Join-Path $BuildDir "Release/$name"
+        if (Test-Path $altPath) {
+            $exePath = $altPath
+        } elseif ($name -eq 'hero_line_wars.exe') {
+            throw "Could not locate $name in the build directory."
+        } else {
+            Write-Warning "Could not locate $name; skipping copy."
+            continue
+        }
+    }
+
+    Copy-Item $exePath -Destination $OutputDir -Force
+    Write-Host "$name copied to $OutputDir"
+}
