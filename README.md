@@ -20,9 +20,18 @@ The project uses CMake and targets C++17.
 cmake -S . -B build
 cmake --build build
 
-# Run the duel
+# Run the duel (macOS/Linux)
 ./build/hero_line_wars
 ```
+
+On Windows you can launch the game directly from PowerShell:
+
+```powershell
+pwsh -File scripts/run-game.ps1
+```
+
+The script configures (if needed) and builds the project before starting `hero_line_wars.exe`. If you prefer a different build
+directory, pass `-BuildDir` or set the `BUILD_DIR` environment variable.
 
 To create a release build:
 
