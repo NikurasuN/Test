@@ -2254,6 +2254,8 @@ public class HeroLineWarsGame extends JFrame {
     private void centerCameraOn(double worldX, double worldY) {
         double viewWidth = getCurrentViewWidthInWorldUnits();
         double viewHeight = getCurrentViewHeightInWorldUnits();
+        int viewWidth = getCurrentViewWidth();
+        int viewHeight = getCurrentViewHeight();
         double targetX = worldX - viewWidth / 2.0;
         double targetY = worldY - viewHeight / 2.0;
         cameraX = clamp(targetX, 0, getMaxCameraX());
@@ -2342,6 +2344,20 @@ public class HeroLineWarsGame extends JFrame {
         cameraX = clamp(desiredX, 0, getMaxCameraX());
         cameraY = clamp(desiredY, 0, getMaxCameraY());
         battlefieldPanel.repaint();
+    private double getMaxCameraX() {
+        return Math.max(0, WORLD_WIDTH - getCurrentViewWidth());
+    }
+
+    private double getMaxCameraY() {
+        return Math.max(0, WORLD_HEIGHT - getCurrentViewHeight());
+    }
+
+    private double screenToWorldX(double screenX) {
+        return cameraX + screenX;
+    }
+
+    private double screenToWorldY(double screenY) {
+        return cameraY + screenY;
     }
 
     private boolean shouldAllowPlayerLaneSwitch() {
@@ -2613,6 +2629,7 @@ public class HeroLineWarsGame extends JFrame {
             inputMap.put(zoomOut, "cameraZoomOut");
             inputMap.put(zoomOutShift, "cameraZoomOut");
             inputMap.put(zoomOutNumpad, "cameraZoomOut");
+            inputMap.put(centerKey, "cameraCenter");
 
             actionMap.put("moveLeft", new javax.swing.AbstractAction() {
                 @Override
@@ -2737,6 +2754,11 @@ public class HeroLineWarsGame extends JFrame {
             int viewWidth = getWidth();
             if (viewWidth <= 0) {
                 viewWidth = getPreferredSize().width;
+            }
+            int viewHeight = getHeight();
+            if (viewHeight <= 0) {
+                viewHeight = getPreferredSize().height;
+            }
             }
             int viewHeight = getHeight();
             if (viewHeight <= 0) {
@@ -3299,6 +3321,7 @@ public class HeroLineWarsGame extends JFrame {
         double verticalSpan = Math.max(0, bottomLimit - topLimit);
         double spawnY = topLimit + (verticalSpan <= 0 ? 0 : random.nextDouble() * verticalSpan);
         return new UnitInstance(type, getUnitBalance(type), spawnX, spawnY, topLimit, bottomLimit, fromPlayer, laneIndex);
+        return new UnitInstance(type, spawnX, spawnY, topLimit, bottomLimit, fromPlayer, laneIndex);
     }
 
     private void resolveHeroUnitCombat() {
