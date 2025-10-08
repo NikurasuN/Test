@@ -315,7 +315,7 @@ internal sealed class Hero
     public void RecalculateStats()
     {
         var totalStrength = GetStrength();
-        MaxHealth = (int)Math.Round(BaseMaxHealth + totalStrength * HealthPerStrength);
+        MaxHealth = (int)Math.Round(BaseMaxHealth + totalStrength * (double)HealthPerStrength);
         if (CurrentHealth > MaxHealth)
         {
             CurrentHealth = MaxHealth;
