@@ -30,7 +30,7 @@ On Windows you can run the helper batch script from Command Prompt:
 scripts\run-game.cmd
 ```
 
-The script configures (if needed) and builds the project before starting `hero_line_wars.exe`. To use a different build directory, pass `--build-dir <path>` or set the `BUILD_DIR` environment variable.
+The script configures (if needed) and builds the project before starting `hero_line_wars.exe`. To use a different build directory, pass `--build-dir <path>` or set the `BUILD_DIR` environment variable. If you already have a preferred CMake generator, set `CMAKE_GENERATOR` before invoking the script. Otherwise it attempts to pick a sensible default (preferring Ninja when available, and falling back to Visual Studio 2022 when MSBuild is detected) so that you don't need the legacy `nmake` tool on your `PATH`.
 
 After building with CMake, a Windows-native launcher (`run_game.exe`) is generated in the build output. Double-click it (or run it from the terminal) to locate `hero_line_wars.exe` in the build tree and start the duel without scripting.
 
