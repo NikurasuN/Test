@@ -22,6 +22,15 @@ dotnet publish dotnet/HeroLineWars/HeroLineWars.csproj \
   -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
 ```
 
+> **PowerShell note:** PowerShell does not support the Unix-style `\` line continuation shown above.
+> Either run the command in a single line:
+>
+> ```powershell
+> dotnet publish dotnet/HeroLineWars/HeroLineWars.csproj -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+> ```
+>
+> …or replace the trailing backslash with PowerShell's `` ` `` continuation character.
+
 The resulting `HeroLineWars.exe` (found under `dotnet/HeroLineWars/bin/Release/net6.0/win-x64/publish/`) bundles the .NET runtime, so you can copy it to a fresh Windows installation and launch the game by double-clicking the executable.
 
 ### macOS/Linux (from source)
