@@ -8,6 +8,7 @@ import javax.swing.JComponent;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
+import javax.swing.JLayeredPane;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
@@ -158,6 +159,7 @@ public class HeroLineWarsGame extends JFrame {
     private GridLayout heroInterfaceLayout;
     private GridLayout heroUpgradeButtonsLayout;
     private JPanel commandPanel;
+    private JLayeredPane battlefieldLayeredPane;
     private JPanel commandFooterPanel;
     private JPanel commandUtilityPanel;
     private JPanel commandUnitPanel;
@@ -1120,7 +1122,9 @@ public class HeroLineWarsGame extends JFrame {
 
         add(topPanel, BorderLayout.NORTH);
 
-        add(battlefieldPanel, BorderLayout.CENTER);
+        commandPanel = createCommandPanel();
+        battlefieldLayeredPane = createBattlefieldLayeredPane();
+        add(battlefieldLayeredPane, BorderLayout.CENTER);
 
         bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 14, 8, 14));
@@ -1128,8 +1132,6 @@ public class HeroLineWarsGame extends JFrame {
 
         heroInterfacePanel = createHeroInterfacePanel();
         bottomPanel.add(heroInterfacePanel, BorderLayout.WEST);
-        commandPanel = createCommandPanel();
-        bottomPanel.add(commandPanel, BorderLayout.CENTER);
 
         add(bottomPanel, BorderLayout.SOUTH);
 
@@ -1226,13 +1228,7 @@ public class HeroLineWarsGame extends JFrame {
             }
         }
 
-        if (commandPanel != null) {
-            int padding = compactBottomHud ? 4 : 6;
-            int sides = compactBottomHud ? 6 : 8;
-            commandPanel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
-                    javax.swing.BorderFactory.createLineBorder(new Color(32, 44, 60)),
-                    javax.swing.BorderFactory.createEmptyBorder(padding, sides, padding, sides)));
-        }
+        updateCommandPanelPadding();
         if (commandUnitPanel != null) {
             int vertical = compactBottomHud ? 1 : 2;
             commandUnitPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(vertical, 0, vertical, 0));
@@ -1265,6 +1261,7 @@ public class HeroLineWarsGame extends JFrame {
             bottomPanel.revalidate();
             bottomPanel.repaint();
         }
+        requestCommandPanelRelayout();
     }
 
     private void applyPanelDimensions(int width, int height) {
@@ -1295,12 +1292,26 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private JPanel createCommandPanel() {
-        JPanel panel = new JPanel(new BorderLayout());
-        panel.setOpaque(true);
-        panel.setBackground(new Color(14, 20, 30));
-        panel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
-                javax.swing.BorderFactory.createLineBorder(new Color(32, 44, 60)),
-                javax.swing.BorderFactory.createEmptyBorder(6, 8, 6, 8)));
+        JPanel panel = new JPanel(new BorderLayout()) {
+            @Override
+            protected void paintComponent(Graphics g) {
+                Graphics2D g2 = (Graphics2D) g.create();
+                g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+                int width = getWidth();
+                int height = getHeight();
+                int arc = 18;
+                if (width > 0 && height > 0) {
+                    g2.setColor(new Color(14, 20, 30, 220));
+                    g2.fillRoundRect(0, 0, width, height, arc, arc);
+                    g2.setColor(new Color(32, 44, 60, 230));
+                    g2.setStroke(new BasicStroke(1.5f));
+                    g2.drawRoundRect(0, 0, width - 1, height - 1, arc, arc);
+                }
+                g2.dispose();
+                super.paintComponent(g);
+            }
+        };
+        panel.setOpaque(false);
 
         JPanel header = new JPanel(new BorderLayout(8, 0));
         header.setOpaque(false);
@@ -1321,7 +1332,7 @@ public class HeroLineWarsGame extends JFrame {
         header.add(playerSelector, BorderLayout.EAST);
         panel.add(header, BorderLayout.NORTH);
 
-        commandUnitPanel = new JPanel(new GridLayout(1, 0, 4, 4));
+        commandUnitPanel = new JPanel(new GridLayout(0, 1, 4, 4));
         commandUnitPanel.setOpaque(false);
         unitButtons.clear();
         for (UnitType type : UnitType.values()) {
@@ -1366,7 +1377,59 @@ public class HeroLineWarsGame extends JFrame {
 
         refreshPlayerSelector();
 
+        updateCommandPanelPadding();
         return panel;
+    }
+
+    private JLayeredPane createBattlefieldLayeredPane() {
+        JLayeredPane layeredPane = new JLayeredPane() {
+            @Override
+            public void doLayout() {
+                Dimension size = getSize();
+                battlefieldPanel.setBounds(0, 0, size.width, size.height);
+                if (commandPanel != null) {
+                    Dimension pref = commandPanel.getPreferredSize();
+                    int margin = getCommandPanelOverlayMargin();
+                    int width = Math.min(pref.width, size.width);
+                    int height = Math.min(pref.height, size.height);
+                    int marginX = Math.min(margin, Math.max(0, size.width - width));
+                    int marginY = Math.min(margin, Math.max(0, size.height - height));
+                    int x = size.width - width - marginX;
+                    int y = size.height - height - marginY;
+                    commandPanel.setBounds(Math.max(0, x), Math.max(0, y), Math.max(0, width), Math.max(0, height));
+                }
+            }
+
+            @Override
+            public Dimension getPreferredSize() {
+                return battlefieldPanel.getPreferredSize();
+            }
+        };
+        layeredPane.setOpaque(false);
+        layeredPane.add(battlefieldPanel, JLayeredPane.DEFAULT_LAYER);
+        layeredPane.add(commandPanel, JLayeredPane.PALETTE_LAYER);
+        return layeredPane;
+    }
+
+    private int getCommandPanelOverlayMargin() {
+        return compactBottomHud ? 16 : 24;
+    }
+
+    private void updateCommandPanelPadding() {
+        if (commandPanel != null) {
+            int vertical = compactBottomHud ? 10 : 14;
+            int horizontal = compactBottomHud ? 12 : 18;
+            commandPanel
+                    .setBorder(javax.swing.BorderFactory.createEmptyBorder(vertical, horizontal, vertical, horizontal));
+            commandPanel.revalidate();
+        }
+    }
+
+    private void requestCommandPanelRelayout() {
+        if (battlefieldLayeredPane != null) {
+            battlefieldLayeredPane.revalidate();
+            battlefieldLayeredPane.repaint();
+        }
     }
 
     private String formatUnitButtonLabel(UnitType type) {
@@ -1390,6 +1453,7 @@ public class HeroLineWarsGame extends JFrame {
                 button.setToolTipText(createUnitTooltip(type));
             }
         }
+        requestCommandPanelRelayout();
     }
 
     private UnitBalance getUnitBalance(UnitType type) {
