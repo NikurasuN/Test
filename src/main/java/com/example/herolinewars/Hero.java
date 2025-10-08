@@ -97,12 +97,36 @@ public class Hero {
         return strength + itemStrengthBonus;
     }
 
+    public int getBaseStrength() {
+        return strength;
+    }
+
     public int getDexterity() {
         return dexterity + itemDexterityBonus;
     }
 
+    public int getBaseDexterity() {
+        return dexterity;
+    }
+
     public int getIntelligence() {
         return intelligence + itemIntelligenceBonus;
+    }
+
+    public int getBaseIntelligence() {
+        return intelligence;
+    }
+
+    public int getItemStrengthBonus() {
+        return itemStrengthBonus;
+    }
+
+    public int getItemDexterityBonus() {
+        return itemDexterityBonus;
+    }
+
+    public int getItemIntelligenceBonus() {
+        return itemIntelligenceBonus;
     }
 
     public int getMaxHealth() {
@@ -354,6 +378,29 @@ public class Hero {
                 defense,
                 gold,
                 income);
+    }
+
+    public void developerSetBaseAttributes(int newStrength, int newDexterity, int newIntelligence) {
+        this.strength = Math.max(0, newStrength);
+        this.dexterity = Math.max(0, newDexterity);
+        this.intelligence = Math.max(0, newIntelligence);
+        recalculateStats();
+    }
+
+    public void developerSetGold(int amount) {
+        this.gold = Math.max(0, amount);
+    }
+
+    public void developerSetIncome(int amount) {
+        this.income = Math.max(0, amount);
+    }
+
+    public void developerSetCurrentHealth(int amount) {
+        this.currentHealth = Math.max(0, Math.min(amount, maxHealth));
+    }
+
+    public void developerSetCurrentShield(int amount) {
+        this.currentShield = Math.max(0, Math.min(amount, getMaxEnergyShield()));
     }
 
     private void recalculateStats() {
