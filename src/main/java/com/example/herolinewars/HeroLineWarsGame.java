@@ -92,6 +92,7 @@ public class HeroLineWarsGame extends JFrame {
     private static final boolean LOCK_HERO_TO_LANE = true;
     private static final boolean LOCK_ENEMY_TO_LANE = true;
     private static final double UNIT_SIGHT_RANGE_MULTIPLIER = 1.35;
+    private static final double ITEM_SELLBACK_RATIO = 0.5;
 
     private static final Item[] SHOP_ITEMS = new Item[] {
             new Item("Sharpened Arrows", 6, 0, 85,
@@ -264,77 +265,70 @@ public class HeroLineWarsGame extends JFrame {
         dialog.setLayout(new BorderLayout());
 
         JLabel header = new JLabel(String.format("%s's Equipment", targetHero.getName()), SwingConstants.CENTER);
-        header.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        header.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 10, 4, 10));
         header.setFont(header.getFont().deriveFont(Font.BOLD, 16f));
-        dialog.add(header, BorderLayout.NORTH);
 
-        JPanel content = new JPanel(new BorderLayout());
+        JLabel goldLabel = new JLabel();
+        goldLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 10, 10, 10));
+        updateShopGoldLabel(goldLabel, targetHero);
+
+        JPanel headerPanel = new JPanel(new BorderLayout());
+        headerPanel.add(header, BorderLayout.NORTH);
+        headerPanel.add(goldLabel, BorderLayout.SOUTH);
+        dialog.add(headerPanel, BorderLayout.NORTH);
+
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+
         JPanel equipmentGrid = new JPanel(new GridLayout(0, 2, 8, 6));
         equipmentGrid.setBorder(javax.swing.BorderFactory.createTitledBorder("Equipped Gear"));
+        equipmentGrid.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        java.util.Map<Item.EquipmentSlot, java.util.List<Item>> equipped = targetHero.getEquippedItemsBySlot();
-        for (Item.EquipmentSlot slot : Item.EquipmentSlot.values()) {
-            StringBuilder slotLabel = new StringBuilder(slot.getDisplayName());
-            if (slot == Item.EquipmentSlot.RING) {
-                slotLabel.append(String.format(" (%d/%d)", targetHero.getEquippedCount(Item.EquipmentSlot.RING),
-                        targetHero.getMaxRings()));
-            }
-            JLabel slotName = new JLabel(slotLabel + ":");
-            slotName.setIcon(IconLibrary.createItemSlotGlyph(slot));
-            slotName.setIconTextGap(6);
-            slotName.setHorizontalTextPosition(SwingConstants.RIGHT);
-            equipmentGrid.add(slotName);
-            java.util.List<Item> slotItems = equipped.get(slot);
-            String text;
-            if (slotItems == null || slotItems.isEmpty()) {
-                text = "Empty";
-            } else {
-                StringBuilder builder = new StringBuilder();
-                for (int i = 0; i < slotItems.size(); i++) {
-                    if (i > 0) {
-                        builder.append(", ");
-                    }
-                    builder.append(slotItems.get(i).getName());
-                }
-                text = builder.toString();
-            }
-            equipmentGrid.add(new JLabel(text));
-        }
-        content.add(equipmentGrid, BorderLayout.NORTH);
+        JTextArea relicArea = new JTextArea();
+        relicArea.setEditable(false);
+        relicArea.setLineWrap(true);
+        relicArea.setWrapStyleWord(true);
+        relicArea.setBackground(new Color(248, 248, 248));
+        JScrollPane relicScroll = new JScrollPane(relicArea);
+        relicScroll.setBorder(null);
+        JPanel relicPanel = new JPanel(new BorderLayout());
+        relicPanel.setBorder(javax.swing.BorderFactory.createTitledBorder("Relics"));
+        relicPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
+        relicPanel.add(relicScroll, BorderLayout.CENTER);
 
-        java.util.List<Item> slotless = new java.util.ArrayList<>();
-        for (Item item : targetHero.getInventory()) {
-            if (item.getSlot() == null) {
-                slotless.add(item);
-            }
-        }
-        if (!slotless.isEmpty()) {
-            JPanel relicPanel = new JPanel(new BorderLayout());
-            relicPanel.setBorder(javax.swing.BorderFactory.createTitledBorder("Relics"));
-            JTextArea relicArea = new JTextArea();
-            relicArea.setEditable(false);
-            relicArea.setLineWrap(true);
-            relicArea.setWrapStyleWord(true);
-            StringBuilder builder = new StringBuilder();
-            for (Item item : slotless) {
-                if (builder.length() > 0) {
-                    builder.append('\n');
-                }
-                builder.append(item.getName()).append(" - ").append(item.getDescription());
-            }
-            relicArea.setText(builder.toString());
-            relicArea.setBackground(new Color(248, 248, 248));
-            relicPanel.add(new javax.swing.JScrollPane(relicArea), BorderLayout.CENTER);
-            content.add(relicPanel, BorderLayout.CENTER);
-        }
+        JPanel sellPanel = new JPanel();
+        sellPanel.setLayout(new BoxLayout(sellPanel, BoxLayout.Y_AXIS));
+        sellPanel.setBorder(javax.swing.BorderFactory.createTitledBorder("Sell Items"));
+        sellPanel.setAlignmentX(Component.LEFT_ALIGNMENT);
 
-        dialog.add(new javax.swing.JScrollPane(content), BorderLayout.CENTER);
+        content.add(equipmentGrid);
+        content.add(javax.swing.Box.createVerticalStrut(8));
+        content.add(relicPanel);
+        content.add(javax.swing.Box.createVerticalStrut(8));
+        content.add(sellPanel);
 
+        dialog.add(new JScrollPane(content), BorderLayout.CENTER);
+
+        JLabel messageLabel = new JLabel("Review your equipment or sell unwanted gear for a refund.");
+        JPanel footer = new JPanel(new BorderLayout());
+        footer.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        footer.add(messageLabel, BorderLayout.CENTER);
         JButton closeButton = new JButton("Close");
         closeButton.addActionListener(e -> dialog.dispose());
-        JPanel footer = new JPanel();
-        footer.add(closeButton);
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.add(closeButton);
+        footer.add(buttonPanel, BorderLayout.EAST);
         dialog.add(footer, BorderLayout.SOUTH);
+
+        final Runnable[] refreshHolder = new Runnable[1];
+        Runnable refreshPanels = () -> {
+            populateEquipmentGrid(equipmentGrid, targetHero);
+            updateRelicPanel(relicPanel, relicArea, targetHero);
+            populateSellPanel(sellPanel, targetHero, messageLabel, refreshHolder[0]);
+            updateShopGoldLabel(goldLabel, targetHero);
+        };
+        refreshHolder[0] = refreshPanels;
+        refreshPanels.run();
 
         dialog.addWindowListener(new WindowAdapter() {
             @Override
@@ -348,7 +342,7 @@ public class HeroLineWarsGame extends JFrame {
             }
         });
 
-        dialog.setSize(new Dimension(420, 420));
+        dialog.setSize(new Dimension(460, 480));
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
     }
@@ -373,6 +367,147 @@ public class HeroLineWarsGame extends JFrame {
         String statsText = stats.isEmpty() ? "No bonuses" : String.join(", ", stats);
         String slotText = item.getSlot() != null ? String.format(" [%s]", item.getSlot().getDisplayName()) : "";
         return String.format("%s - %dG (%s)%s", item.getName(), item.getCost(), statsText, slotText);
+    }
+
+    private void populateEquipmentGrid(JPanel equipmentGrid, Hero hero) {
+        equipmentGrid.removeAll();
+        if (hero == null) {
+            equipmentGrid.revalidate();
+            equipmentGrid.repaint();
+            return;
+        }
+        java.util.Map<Item.EquipmentSlot, java.util.List<Item>> equipped = hero.getEquippedItemsBySlot();
+        for (Item.EquipmentSlot slot : Item.EquipmentSlot.values()) {
+            StringBuilder slotLabel = new StringBuilder(slot.getDisplayName());
+            if (slot == Item.EquipmentSlot.RING) {
+                slotLabel.append(String.format(" (%d/%d)", hero.getEquippedCount(Item.EquipmentSlot.RING),
+                        hero.getMaxRings()));
+            }
+            JLabel slotName = new JLabel(slotLabel + ":");
+            slotName.setIcon(IconLibrary.createItemSlotGlyph(slot));
+            slotName.setIconTextGap(6);
+            slotName.setHorizontalTextPosition(SwingConstants.RIGHT);
+            equipmentGrid.add(slotName);
+
+            java.util.List<Item> slotItems = equipped.get(slot);
+            String text;
+            if (slotItems == null || slotItems.isEmpty()) {
+                text = "Empty";
+            } else {
+                StringBuilder builder = new StringBuilder();
+                for (int i = 0; i < slotItems.size(); i++) {
+                    if (i > 0) {
+                        builder.append(", ");
+                    }
+                    builder.append(slotItems.get(i).getName());
+                }
+                text = builder.toString();
+            }
+            equipmentGrid.add(new JLabel(text));
+        }
+        equipmentGrid.revalidate();
+        equipmentGrid.repaint();
+    }
+
+    private void updateRelicPanel(JPanel relicPanel, JTextArea relicArea, Hero hero) {
+        if (relicPanel == null || relicArea == null) {
+            return;
+        }
+        if (hero == null) {
+            relicPanel.setVisible(false);
+            return;
+        }
+        java.util.List<Item> slotless = new java.util.ArrayList<>();
+        for (Item item : hero.getInventory()) {
+            if (item.getSlot() == null) {
+                slotless.add(item);
+            }
+        }
+        if (slotless.isEmpty()) {
+            relicPanel.setVisible(false);
+            relicArea.setText("");
+            relicPanel.revalidate();
+            relicPanel.repaint();
+            return;
+        }
+        StringBuilder builder = new StringBuilder();
+        for (int i = 0; i < slotless.size(); i++) {
+            if (i > 0) {
+                builder.append('\n');
+            }
+            Item item = slotless.get(i);
+            builder.append(item.getName()).append(" - ").append(item.getDescription());
+        }
+        relicArea.setText(builder.toString());
+        relicPanel.setVisible(true);
+        relicPanel.revalidate();
+        relicPanel.repaint();
+    }
+
+    private void populateSellPanel(JPanel sellPanel, Hero hero, JLabel messageLabel, Runnable refreshAction) {
+        sellPanel.removeAll();
+        if (hero == null) {
+            JLabel empty = new JLabel("No hero selected.");
+            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+            sellPanel.add(empty);
+            sellPanel.revalidate();
+            sellPanel.repaint();
+            return;
+        }
+
+        java.util.List<Item> items = new java.util.ArrayList<>(hero.getInventory());
+        if (items.isEmpty()) {
+            JLabel empty = new JLabel("No items available to sell.");
+            empty.setAlignmentX(Component.LEFT_ALIGNMENT);
+            sellPanel.add(empty);
+            sellPanel.revalidate();
+            sellPanel.repaint();
+            return;
+        }
+
+        for (Item item : items) {
+            JPanel row = new JPanel(new BorderLayout(6, 0));
+            row.setOpaque(false);
+            row.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+            JLabel itemLabel = new JLabel(formatItemLabel(item));
+            int refundValue = computeSellValue(item);
+            JButton sellButton = new JButton(String.format("Sell (%dG)", refundValue));
+            sellButton.setToolTipText(String.format("Refund %d gold", refundValue));
+            sellButton.addActionListener(e -> {
+                if (!hero.removeItem(item)) {
+                    if (messageLabel != null) {
+                        messageLabel.setText(String.format("Unable to sell %s.", item.getName()));
+                    }
+                    return;
+                }
+                hero.addGold(refundValue);
+                if (messageLabel != null) {
+                    messageLabel.setText(String.format("Sold %s for %d gold.", item.getName(), refundValue));
+                }
+                lastActionMessage = String.format("%s sold %s for %d gold.", hero.getName(), item.getName(),
+                        refundValue);
+                refreshHud();
+                battlefieldPanel.repaint();
+                if (refreshAction != null) {
+                    refreshAction.run();
+                }
+            });
+
+            row.add(itemLabel, BorderLayout.CENTER);
+            row.add(sellButton, BorderLayout.EAST);
+            sellPanel.add(row);
+        }
+
+        sellPanel.revalidate();
+        sellPanel.repaint();
+    }
+
+    private int computeSellValue(Item item) {
+        if (item == null) {
+            return 0;
+        }
+        return Math.max(1, (int) Math.round(item.getCost() * ITEM_SELLBACK_RATIO));
     }
 
     private void updateShopGoldLabel(JLabel label, Hero hero) {
@@ -1666,6 +1801,11 @@ public class HeroLineWarsGame extends JFrame {
 
     private void launchProjectile(boolean fromPlayer, ProjectileType type, double centerX, double centerY, Hero attacker,
             HeroTarget target) {
+        projectiles.add(new Projectile(fromPlayer, type, centerX, centerY, attacker, target));
+    }
+
+    private void launchProjectile(boolean fromPlayer, ProjectileType type, double centerX, double centerY,
+            UnitInstance attacker, HeroTarget target) {
         projectiles.add(new Projectile(fromPlayer, type, centerX, centerY, attacker, target));
     }
 
@@ -4175,6 +4315,23 @@ public class HeroLineWarsGame extends JFrame {
             }
         }
 
+        Projectile(boolean fromPlayer, ProjectileType type, double startX, double startY, UnitInstance attacker,
+                HeroTarget target) {
+            this.fromPlayer = fromPlayer;
+            this.type = type;
+            this.target = target;
+            this.x = startX;
+            this.y = startY;
+            int damageValue = attacker != null ? Math.max(1, attacker.getDamageValue()) : 1;
+            if (target.isHeroTarget()) {
+                Hero heroTarget = fromPlayer ? aiHero : playerHero;
+                if (heroTarget != null) {
+                    damageValue = Math.max(1, damageValue - heroTarget.getDefense());
+                }
+            }
+            this.damage = damageValue;
+        }
+
         boolean update() {
             if (!isTargetAlive()) {
                 return true;
@@ -4358,18 +4515,33 @@ public class HeroLineWarsGame extends JFrame {
             target.takeDamage(balance.getDamage());
             if (target.isDead() && target.markDefeatHandled()) {
                 HeroLineWarsGame.this.handleUnitDefeatedByUnit(this, target);
+            if (attackCooldown <= 0 && isInRange(target)) {
+                if (type == UnitType.ARCHER) {
+                    HeroLineWarsGame.this.launchProjectile(fromPlayer, ProjectileType.ARROW, getCenterX(), getCenterY(),
+                            this, HeroTarget.unit(target));
+                } else {
+                    target.takeDamage(balance.getDamage());
+                }
+                attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
             }
             attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
         }
 
         boolean tryAttackHero(Hero hero) {
-            if (attackCooldown <= 0) {
-                int damage = Math.max(1, balance.getDamage() - hero.getDefense());
-                boolean defeated = hero.takeDamage(damage);
-                attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
-                return defeated;
+            if (attackCooldown > 0) {
+                return false;
             }
-            return false;
+            if (type == UnitType.ARCHER) {
+                HeroTarget target = fromPlayer ? HeroTarget.enemyHero() : HeroTarget.playerHero();
+                HeroLineWarsGame.this.launchProjectile(fromPlayer, ProjectileType.ARROW, getCenterX(), getCenterY(), this,
+                        target);
+                attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
+                return false;
+            }
+            int damage = Math.max(1, balance.getDamage() - hero.getDefense());
+            boolean defeated = hero.takeDamage(damage);
+            attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
+            return defeated;
         }
 
         void lockAt(double newX) {
@@ -4462,6 +4634,8 @@ public class HeroLineWarsGame extends JFrame {
             }
             defeatHandled = true;
             return true;
+        int getDamageValue() {
+            return balance.getDamage();
         }
     }
 }
