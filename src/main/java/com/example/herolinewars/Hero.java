@@ -264,6 +264,28 @@ public class Hero {
         return true;
     }
 
+    public boolean removeItem(Item item) {
+        if (item == null || !inventory.remove(item)) {
+            return false;
+        }
+        Item.EquipmentSlot slot = item.getSlot();
+        if (slot != null && slot.isUnique()) {
+            Item equipped = equippedUniqueItems.get(slot);
+            if (equipped == item) {
+                equippedUniqueItems.remove(slot);
+            }
+        }
+        itemAttackBonus -= item.getAttackBonus();
+        itemDefenseBonus -= item.getDefenseBonus();
+        itemStrengthBonus -= item.getStrengthBonus();
+        itemDexterityBonus -= item.getDexterityBonus();
+        itemIntelligenceBonus -= item.getIntelligenceBonus();
+        recalculateStats();
+        currentHealth = Math.min(currentHealth, maxHealth);
+        currentShield = Math.min(currentShield, getMaxEnergyShield());
+        return true;
+    }
+
     public int getEquippedCount(Item.EquipmentSlot slot) {
         if (slot == null) {
             return 0;
