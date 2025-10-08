@@ -74,6 +74,25 @@ if defined CMAKE_GENERATOR (
     )
 )
 
+set "CACHE_FILE=%BUILD_DIR%\CMakeCache.txt"
+set "CACHED_GENERATOR="
+if exist "%CACHE_FILE%" (
+    for /f "usebackq tokens=1,* delims==" %%A in (`findstr /R /C:"^CMAKE_GENERATOR:INTERNAL=" "%CACHE_FILE%"`) do (
+        set "CACHED_GENERATOR=%%~B"
+    )
+)
+
+if defined CACHED_GENERATOR (
+    if defined CMAKE_GENERATOR_NAME (
+        if /I not "%CMAKE_GENERATOR_NAME%"=="%CACHED_GENERATOR%" (
+            call :handle_generator_mismatch "%BUILD_DIR%" "%CACHED_GENERATOR%" "%CMAKE_GENERATOR_NAME%"
+            if errorlevel 1 goto fail
+        )
+    ) else (
+        set "CMAKE_GENERATOR_NAME=%CACHED_GENERATOR%"
+    )
+)
+
 set "CMAKE_ARCH_ARGS="
 if defined CMAKE_GENERATOR_NAME (
     if /I "%CMAKE_GENERATOR_NAME%"=="Visual Studio 17 2022" (
@@ -229,6 +248,42 @@ for /f "delims=" %%f in ('dir /b /s "%~1\hero_line_wars.exe" 2^>nul') do (
     goto :found
 )
 :found
+goto :eof
+
+:handle_generator_mismatch
+    set "MISMATCH_DIR=%~1"
+    set "OLD_GENERATOR=%~2"
+    set "NEW_GENERATOR=%~3"
+    echo Detected existing CMake cache in "%MISMATCH_DIR%" generated with "%OLD_GENERATOR%".
+    echo Removing cached build files to switch to "%NEW_GENERATOR%".
+    call :clear_build_dir "%MISMATCH_DIR%"
+    exit /b %errorlevel%
+
+:clear_build_dir
+    set "DIR_TO_CLEAR=%~1"
+    if not exist "%DIR_TO_CLEAR%" goto :eof
+    set "CACHE_PATH=%DIR_TO_CLEAR%\CMakeCache.txt"
+    if exist "%CACHE_PATH%" (
+        del /F /Q "%CACHE_PATH%" >nul 2>nul
+        if exist "%CACHE_PATH%" (
+            echo Failed to remove "%CACHE_PATH%". >&2
+            exit /b 1
+        )
+    )
+    for %%D in (CMakeFiles CMakeScripts) do (
+        if exist "%DIR_TO_CLEAR%\%%D" (
+            rmdir /S /Q "%DIR_TO_CLEAR%\%%D" >nul 2>nul
+            if exist "%DIR_TO_CLEAR%\%%D" (
+                echo Failed to remove "%DIR_TO_CLEAR%\%%D". >&2
+                exit /b 1
+            )
+        )
+    )
+    for %%F in (build.ninja Makefile cmake_install.cmake .ninja_deps .ninja_log) do (
+        if exist "%DIR_TO_CLEAR%\%%F" (
+            del /F /Q "%DIR_TO_CLEAR%\%%F" >nul 2>nul
+        )
+    )
 goto :eof
 
 :usage
