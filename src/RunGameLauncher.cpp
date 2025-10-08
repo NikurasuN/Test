@@ -1,6 +1,8 @@
 #ifdef _WIN32
 #include <windows.h>
 
+#include "HeroLineWarsGame.h"
+
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -127,6 +129,28 @@ std::wstring Utf8ToWide(const std::string &text)
     return wide;
 }
 
+[[noreturn]] void AbortWithMessage(const std::wstring &message);
+
+int RunEmbeddedGame()
+{
+    try
+    {
+        std::wcout << L"Launching embedded Hero Line Wars build..." << std::endl;
+        herolinewars::runGame();
+        return EXIT_SUCCESS;
+    }
+    catch (const std::exception &ex)
+    {
+        AbortWithMessage(L"Standalone launcher error: " + Utf8ToWide(ex.what()));
+    }
+    catch (...)
+    {
+        AbortWithMessage(L"An unknown error occurred while running the embedded game.");
+    }
+
+    return EXIT_FAILURE;
+}
+
 [[noreturn]] void AbortWithMessage(const std::wstring &message)
 {
     std::wcerr << message << std::endl;
@@ -144,7 +168,9 @@ int wmain(int argc, wchar_t *argv[])
 
         if (gameExecutable.empty())
         {
-            AbortWithMessage(L"Unable to locate hero_line_wars.exe. Build the project first using CMake.");
+            std::wcerr << L"Unable to locate hero_line_wars.exe next to the launcher." << std::endl;
+            std::wcerr << L"Falling back to the embedded standalone game." << std::endl;
+            return RunEmbeddedGame();
         }
 
         std::wstring commandLine = BuildCommandLine(gameExecutable, argc, argv);

@@ -1,4 +1,5 @@
 #include "Hero.h"
+#include "HeroLineWarsGame.h"
 #include "IconLibrary.h"
 #include "Item.h"
 #include "Team.h"

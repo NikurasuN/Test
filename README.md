@@ -44,6 +44,8 @@ launch step is instant.
 
 After building with CMake, a platform-native launcher (`run_game` on macOS/Linux, `run_game.exe` on Windows) is generated in the build output. Double-click it (or run it from the terminal) to locate the appropriate `hero_line_wars` binary in the build tree and start the duel without scripting.
 
+On Windows the launcher now bundles a fallback build of the game. If no standalone `hero_line_wars.exe` sits next to the launcher, it automatically boots the embedded version instead. That means you can ship **just** the `run_game.exe` produced by CMake to another Windows PC that lacks developer tools—double-clicking it starts the duel immediately.
+
 ```bash
 cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
 cmake --build build/release --config Release

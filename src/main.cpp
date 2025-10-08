@@ -1,6 +1,4 @@
-namespace herolinewars {
-void runGame();
-}
+#include "HeroLineWarsGame.h"
 
 int main() {
     herolinewars::runGame();
