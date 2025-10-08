@@ -198,4 +198,12 @@ int wmain(int argc, wchar_t *argv[])
 
     return EXIT_FAILURE;
 }
+
+extern int __argc;
+extern wchar_t **__wargv;
+
+int APIENTRY wWinMain(HINSTANCE, HINSTANCE, LPWSTR, int)
+{
+    return wmain(__argc, __wargv);
+}
 #endif
