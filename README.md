@@ -13,7 +13,20 @@ ve.
 
 ## Building and running
 
-The project uses CMake and targets C++17.
+### Windows (.NET single-file build)
+
+The repository ships with a C# console port that can be published as a standalone Windows executable. From any machine with the .NET 6 SDK installed, run:
+
+```bash
+dotnet publish dotnet/HeroLineWars/HeroLineWars.csproj \
+  -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
+```
+
+The resulting `HeroLineWars.exe` (found under `dotnet/HeroLineWars/bin/Release/net6.0/win-x64/publish/`) bundles the .NET runtime, so you can copy it to a fresh Windows installation and launch the game by double-clicking the executable.
+
+### macOS/Linux (from source)
+
+The original C++17 source is still available if you prefer to compile the terminal edition yourself.
 
 ```bash
 # Configure and build (Debug by default)
