@@ -11,6 +11,21 @@ ve.
 - Purchase equipment to specialise your hero and dominate the front line.
 - Win waves to damage the opposing base—lose and your own fortifications crumble.
 
+## Prerequisites
+
+Before building the project you need the following tools available on your
+`PATH`:
+
+- **CMake** 3.16 or newer.
+- A C++17 capable compiler toolchain (e.g. Visual Studio Build Tools on
+  Windows, or GCC/Clang on Linux/macOS).
+
+> **Windows note:** If you see an error such as `cmake : Die Benennung "cmake"
+> wurde nicht als Name ... erkannt`, PowerShell cannot find the CMake
+> executable. Install CMake from [cmake.org](https://cmake.org/download/), or
+> launch a *Developer PowerShell for Visual Studio* where CMake is already on
+> the `PATH`.
+
 ## Building and running
 
 The project uses CMake and targets C++17.
