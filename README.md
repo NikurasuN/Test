@@ -24,6 +24,14 @@ cmake --build build
 ./build/hero_line_wars
 ```
 
+You can now use the cross-platform launcher to build (if necessary) and start the duel:
+
+```bash
+python scripts/launch-game.py -- [game arguments]
+```
+
+Pass `--skip-build` if you only want to run an existing build, or `--config` when using multi-configuration generators.
+
 On Windows you can run the helper batch script from Command Prompt:
 
 ```cmd
