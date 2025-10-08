@@ -64,9 +64,12 @@ if defined CMAKE_GENERATOR (
     if not errorlevel 1 (
         set "CMAKE_GENERATOR_NAME=Ninja"
     ) else (
-        where msbuild >nul 2>nul
-        if not errorlevel 1 (
-            set "CMAKE_GENERATOR_NAME=Visual Studio 17 2022"
+        call :detect_generator_with_vswhere
+        if not defined CMAKE_GENERATOR_NAME (
+            call :detect_generator_from_env
+        )
+        if not defined CMAKE_GENERATOR_NAME (
+            call :detect_generator_by_defaults
         )
     )
 )
@@ -79,6 +82,12 @@ if defined CMAKE_GENERATOR_NAME (
         ) else (
             set "CMAKE_ARCH_ARGS=-A x64"
         )
+    ) else if /I "%CMAKE_GENERATOR_NAME%"=="Visual Studio 16 2019" (
+        if defined VSCMD_ARG_TGT_ARCH (
+            set "CMAKE_ARCH_ARGS=-A %VSCMD_ARG_TGT_ARCH%"
+        ) else (
+            set "CMAKE_ARCH_ARGS=-A x64"
+        )
     )
 )
 
@@ -86,10 +95,11 @@ echo Configuring project in "%BUILD_DIR%"...
 if defined CMAKE_GENERATOR_NAME (
     echo Using CMake generator: %CMAKE_GENERATOR_NAME%
     cmake -S "%PROJECT_ROOT%" -B "%BUILD_DIR%" -G "%CMAKE_GENERATOR_NAME%" %CMAKE_ARCH_ARGS%
+    if errorlevel 1 goto cmake_failed
 ) else (
     cmake -S "%PROJECT_ROOT%" -B "%BUILD_DIR%"
+    if errorlevel 1 goto cmake_failed
 )
-if errorlevel 1 goto cmake_failed
 
 echo Building project...
 cmake --build "%BUILD_DIR%"
@@ -103,6 +113,109 @@ if not defined GAME_EXE (
 
 echo Launching %GAME_EXE% %GAME_ARGS%
 "%GAME_EXE%" %GAME_ARGS%
+goto :eof
+
+:detect_generator_from_env
+if defined VisualStudioVersion (
+    for /f "tokens=1 delims=." %%v in ("%VisualStudioVersion%") do (
+        if "%%v"=="17" (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 17 2022"
+        ) else if "%%v"=="16" (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 16 2019"
+        )
+    )
+)
+if not defined CMAKE_GENERATOR_NAME (
+    for /f "tokens=1 delims=." %%m in ('msbuild -version -nologo 2^>nul') do (
+        if "%%m"=="17" (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 17 2022"
+        ) else if "%%m"=="16" (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 16 2019"
+        )
+        goto :detect_generator_done
+    )
+)
+if not defined CMAKE_GENERATOR_NAME (
+    rem As a last resort, try to infer from the msbuild install path
+    for /f "delims=" %%p in ('where msbuild 2^>nul') do (
+        for %%v in (2022 2019) do (
+            echo %%p | findstr /i "Visual Studio %%v" >nul
+            if not errorlevel 1 (
+                if "%%v"=="2022" (
+                    set "CMAKE_GENERATOR_NAME=Visual Studio 17 2022"
+                ) else (
+                    set "CMAKE_GENERATOR_NAME=Visual Studio 16 2019"
+                )
+                goto :detect_generator_done
+            )
+        )
+    )
+)
+:detect_generator_done
+if not defined CMAKE_GENERATOR_NAME (
+    echo Unable to determine a Visual Studio generator automatically. >&2
+    echo Falling back to CMake default generator. Set CMAKE_GENERATOR to override. >&2
+)
+goto :eof
+
+:detect_generator_with_vswhere
+set "VSWHERE_PATH="
+if defined ProgramFiles(x86) (
+    if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
+        set "VSWHERE_PATH=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
+    )
+)
+if not defined VSWHERE_PATH (
+    if defined ProgramFiles (
+        if exist "%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe" (
+            set "VSWHERE_PATH=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe"
+        )
+    )
+)
+if not defined VSWHERE_PATH (
+    for /f "delims=" %%p in ('where vswhere 2^>nul') do (
+        if not defined VSWHERE_PATH (
+            set "VSWHERE_PATH=%%p"
+        )
+    )
+)
+if not defined VSWHERE_PATH goto :eof
+
+set "VSWHERE_ARGS=-latest -products * -requires Microsoft.Component.MSBuild -property installationVersion"
+for /f "tokens=1 delims=." %%v in ('"%VSWHERE_PATH%" %VSWHERE_ARGS% 2^>nul') do (
+    if not defined CMAKE_GENERATOR_NAME (
+        if "%%v"=="17" (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 17 2022"
+        ) else if "%%v"=="16" (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 16 2019"
+        )
+    )
+)
+if defined CMAKE_GENERATOR_NAME goto :eof
+
+set "VSWHERE_ARGS=-latest -products * -requires Microsoft.Component.MSBuild -property catalog_productLineVersion"
+for /f "tokens=1" %%v in ('"%VSWHERE_PATH%" %VSWHERE_ARGS% 2^>nul') do (
+    if not defined CMAKE_GENERATOR_NAME (
+        if "%%v"=="2022" (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 17 2022"
+        ) else if "%%v"=="2019" (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 16 2019"
+        )
+    )
+)
+goto :eof
+
+:detect_generator_by_defaults
+if not defined CMAKE_GENERATOR_NAME (
+    for %%g in ("Visual Studio 17 2022" "Visual Studio 16 2019") do (
+        if not defined CMAKE_GENERATOR_NAME (
+            cmake --help 2>nul | findstr /C:"%%~g" >nul
+            if not errorlevel 1 (
+                set "CMAKE_GENERATOR_NAME=%%~g"
+            )
+        )
+    )
+)
 goto :eof
 
 :locate_executable
