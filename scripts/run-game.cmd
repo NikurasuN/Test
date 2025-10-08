@@ -56,8 +56,39 @@ pushd "%PROJECT_ROOT%" >nul
 for %%i in ("%SELECTED_BUILD_DIR%") do set "BUILD_DIR=%%~fi"
 popd >nul
 
+set "CMAKE_GENERATOR_NAME="
+if defined CMAKE_GENERATOR (
+    set "CMAKE_GENERATOR_NAME=%CMAKE_GENERATOR%"
+) else (
+    where ninja >nul 2>nul
+    if not errorlevel 1 (
+        set "CMAKE_GENERATOR_NAME=Ninja"
+    ) else (
+        where msbuild >nul 2>nul
+        if not errorlevel 1 (
+            set "CMAKE_GENERATOR_NAME=Visual Studio 17 2022"
+        )
+    )
+)
+
+set "CMAKE_ARCH_ARGS="
+if defined CMAKE_GENERATOR_NAME (
+    if /I "%CMAKE_GENERATOR_NAME%"=="Visual Studio 17 2022" (
+        if defined VSCMD_ARG_TGT_ARCH (
+            set "CMAKE_ARCH_ARGS=-A %VSCMD_ARG_TGT_ARCH%"
+        ) else (
+            set "CMAKE_ARCH_ARGS=-A x64"
+        )
+    )
+)
+
 echo Configuring project in "%BUILD_DIR%"...
-cmake -S "%PROJECT_ROOT%" -B "%BUILD_DIR%"
+if defined CMAKE_GENERATOR_NAME (
+    echo Using CMake generator: %CMAKE_GENERATOR_NAME%
+    cmake -S "%PROJECT_ROOT%" -B "%BUILD_DIR%" -G "%CMAKE_GENERATOR_NAME%" %CMAKE_ARCH_ARGS%
+) else (
+    cmake -S "%PROJECT_ROOT%" -B "%BUILD_DIR%"
+)
 if errorlevel 1 goto cmake_failed
 
 echo Building project...
