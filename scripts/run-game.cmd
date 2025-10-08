@@ -225,16 +225,33 @@ for /f "tokens=1" %%v in ('"%VSWHERE_PATH%" %VSWHERE_ARGS% 2^>nul') do (
 goto :eof
 
 :detect_generator_by_defaults
-if not defined CMAKE_GENERATOR_NAME (
-    for %%g in ("Visual Studio 17 2022" "Visual Studio 16 2019") do (
-        if not defined CMAKE_GENERATOR_NAME (
-            cmake --help 2>nul | findstr /C:"%%~g" >nul
-            if not errorlevel 1 (
-                set "CMAKE_GENERATOR_NAME=%%~g"
-            )
+if defined CMAKE_GENERATOR_NAME goto :eof
+
+rem Only attempt to fall back to a Visual Studio generator when we know that
+rem the current environment actually has a Visual Studio toolchain available.
+rem This prevents us from selecting a generator that CMake advertises but is
+rem not installed locally (which would otherwise cause the configuration step
+rem to fail with a "could not find any instance of Visual Studio" error).
+set "_VS_ENV_PRESENT="
+for %%v in (VSINSTALLDIR VCINSTALLDIR) do (
+    if defined %%v set "_VS_ENV_PRESENT=1"
+)
+if not defined _VS_ENV_PRESENT (
+    for %%v in (170 160 150 140) do (
+        if defined VS%%vCOMNTOOLS set "_VS_ENV_PRESENT=1"
+    )
+)
+if not defined _VS_ENV_PRESENT goto :eof
+
+for %%g in ("Visual Studio 17 2022" "Visual Studio 16 2019") do (
+    if not defined CMAKE_GENERATOR_NAME (
+        cmake --help 2>nul | findstr /C:"%%~g" >nul
+        if not errorlevel 1 (
+            set "CMAKE_GENERATOR_NAME=%%~g"
         )
     )
 )
+set "_VS_ENV_PRESENT="
 goto :eof
 
 :locate_executable
