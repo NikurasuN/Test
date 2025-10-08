@@ -30,6 +30,7 @@ import java.awt.Graphics2D;
 import java.awt.GradientPaint;
 import java.awt.GridLayout;
 import java.awt.RenderingHints;
+import java.awt.Point;
 import java.awt.geom.AffineTransform;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
@@ -89,10 +90,10 @@ public class HeroLineWarsGame extends JFrame {
     private static final double CAMERA_ZOOM_STEP = 0.15;
     private static final double CAMERA_MIN_ZOOM = 0.6;
     private static final double CAMERA_MAX_ZOOM = 1.8;
-    private static final boolean LOCK_HERO_TO_LANE = true;
-    private static final boolean LOCK_ENEMY_TO_LANE = true;
-    private static final double UNIT_SIGHT_RANGE_MULTIPLIER = 1.35;
     private static final double ITEM_SELLBACK_RATIO = 0.5;
+    private static final double DEFAULT_UNIT_SIGHT_RANGE_MULTIPLIER = 1.2;
+    private static final int EDGE_SCROLL_THRESHOLD = 28;
+    private static final double EDGE_SCROLL_SPEED = 42;
 
     private static final Item[] SHOP_ITEMS = new Item[] {
             new Item("Sharpened Arrows", 6, 0, 85,
@@ -152,6 +153,25 @@ public class HeroLineWarsGame extends JFrame {
     private final JButton upgradeIntelligenceButton = new JButton();
     private final javax.swing.JComboBox<String> playerSelector = new javax.swing.JComboBox<>();
 
+    private JPanel bottomPanel;
+    private JPanel heroInterfacePanel;
+    private GridLayout heroInterfaceLayout;
+    private GridLayout heroUpgradeButtonsLayout;
+    private JPanel commandPanel;
+    private JPanel commandFooterPanel;
+    private JPanel commandUtilityPanel;
+    private JPanel commandUnitPanel;
+    private final java.util.List<JButton> commandUtilityButtons = new ArrayList<>();
+    private Font heroSummaryFontNormal;
+    private Font heroSummaryFontCompact;
+    private Font heroDetailFontNormal;
+    private Font heroDetailFontCompact;
+    private Font upgradeButtonFontNormal;
+    private Font upgradeButtonFontCompact;
+    private JButton inventoryButton;
+    private JButton shopButton;
+    private JButton pauseButton;
+
     private final BattlefieldPanel battlefieldPanel = new BattlefieldPanel();
     private Timer gameTimer;
 
@@ -199,6 +219,10 @@ public class HeroLineWarsGame extends JFrame {
     private boolean showInventoryLabel = true;
     private boolean showActionSummary = true;
     private boolean showQueueStatus = true;
+    private boolean compactBottomHud = true;
+    private boolean heroLaneSwitchingEnabled = true;
+    private boolean enemyLaneSwitchingEnabled = true;
+    private double unitSightRangeMultiplier = DEFAULT_UNIT_SIGHT_RANGE_MULTIPLIER;
 
     private static final int PLAYER_DEFAULT_LANE = 0;
     private static final int ENEMY_DEFAULT_LANE = LANES_PER_SIDE - 1;
@@ -1098,18 +1122,21 @@ public class HeroLineWarsGame extends JFrame {
 
         add(battlefieldPanel, BorderLayout.CENTER);
 
-        JPanel bottomPanel = new JPanel(new BorderLayout());
+        bottomPanel = new JPanel(new BorderLayout());
         bottomPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 14, 8, 14));
         bottomPanel.setBackground(new Color(12, 18, 28));
 
-        bottomPanel.add(createHeroInterfacePanel(), BorderLayout.WEST);
-        bottomPanel.add(createCommandPanel(), BorderLayout.CENTER);
+        heroInterfacePanel = createHeroInterfacePanel();
+        bottomPanel.add(heroInterfacePanel, BorderLayout.WEST);
+        commandPanel = createCommandPanel();
+        bottomPanel.add(commandPanel, BorderLayout.CENTER);
 
         add(bottomPanel, BorderLayout.SOUTH);
 
         updateHeroInterface();
         refreshControlsHint();
         applyUiVisibility();
+        applyHudDensity();
     }
 
     private void refreshPlayerSelector() {
@@ -1151,6 +1178,95 @@ public class HeroLineWarsGame extends JFrame {
         actionLabel.setVisible(showActionSummary);
     }
 
+    private void applyHudDensity() {
+        if (bottomPanel == null) {
+            return;
+        }
+        int outerTop = compactBottomHud ? 4 : 6;
+        int outerBottom = compactBottomHud ? 5 : 8;
+        int outerSides = compactBottomHud ? 12 : 14;
+        bottomPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(outerTop, outerSides, outerBottom, outerSides));
+
+        if (heroInterfacePanel != null) {
+            int heroPadding = compactBottomHud ? 4 : 6;
+            int heroSidePadding = compactBottomHud ? 8 : 10;
+            heroInterfacePanel
+                    .setBorder(javax.swing.BorderFactory.createEmptyBorder(heroPadding, heroSidePadding, heroPadding,
+                            heroSidePadding));
+            if (heroInterfaceLayout != null) {
+                heroInterfaceLayout.setHgap(compactBottomHud ? 2 : 3);
+                heroInterfaceLayout.setVgap(compactBottomHud ? 2 : 3);
+            }
+        }
+
+        Font summaryFont = compactBottomHud ? heroSummaryFontCompact : heroSummaryFontNormal;
+        if (summaryFont != null) {
+            heroSummaryLabel.setFont(summaryFont);
+        }
+        Font detailFont = compactBottomHud ? heroDetailFontCompact : heroDetailFontNormal;
+        if (detailFont != null) {
+            heroAttributesLabel.setFont(detailFont);
+            heroCombatLabel.setFont(detailFont);
+            heroProgressLabel.setFont(detailFont);
+            heroResourceLabel.setFont(detailFont);
+            upgradeSummaryLabel.setFont(detailFont);
+        }
+        if (heroUpgradeButtonsLayout != null) {
+            heroUpgradeButtonsLayout.setHgap(compactBottomHud ? 3 : 4);
+            heroUpgradeButtonsLayout.setVgap(compactBottomHud ? 3 : 4);
+        }
+        Font upgradeFont = compactBottomHud ? upgradeButtonFontCompact : upgradeButtonFontNormal;
+        if (upgradeFont != null) {
+            JButton[] buttons = { upgradeStrengthButton, upgradeDexterityButton, upgradeIntelligenceButton };
+            for (JButton button : buttons) {
+                button.setFont(upgradeFont);
+                int pad = compactBottomHud ? 3 : 4;
+                int side = compactBottomHud ? 7 : 8;
+                button.setBorder(javax.swing.BorderFactory.createEmptyBorder(pad, side, pad, side));
+            }
+        }
+
+        if (commandPanel != null) {
+            int padding = compactBottomHud ? 4 : 6;
+            int sides = compactBottomHud ? 6 : 8;
+            commandPanel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                    javax.swing.BorderFactory.createLineBorder(new Color(32, 44, 60)),
+                    javax.swing.BorderFactory.createEmptyBorder(padding, sides, padding, sides)));
+        }
+        if (commandUnitPanel != null) {
+            int vertical = compactBottomHud ? 1 : 2;
+            commandUnitPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(vertical, 0, vertical, 0));
+        }
+        if (commandUtilityPanel != null && commandUtilityPanel.getLayout() instanceof java.awt.FlowLayout) {
+            java.awt.FlowLayout layout = (java.awt.FlowLayout) commandUtilityPanel.getLayout();
+            layout.setHgap(compactBottomHud ? 6 : 8);
+            layout.setVgap(0);
+        }
+
+        for (JButton button : unitButtons.values()) {
+            int vertical = compactBottomHud ? 2 : 3;
+            int horizontal = compactBottomHud ? 6 : 8;
+            button.setFont(button.getFont().deriveFont(compactBottomHud ? 11f : 12f));
+            button.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                    javax.swing.BorderFactory.createLineBorder(new Color(56, 92, 130)),
+                    javax.swing.BorderFactory.createEmptyBorder(vertical, horizontal, vertical, horizontal)));
+        }
+
+        for (JButton button : commandUtilityButtons) {
+            int vertical = compactBottomHud ? 2 : 3;
+            int horizontal = compactBottomHud ? 6 : 7;
+            button.setFont(button.getFont().deriveFont(compactBottomHud ? 10.5f : 11.5f));
+            button.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                    javax.swing.BorderFactory.createLineBorder(new Color(70, 88, 110)),
+                    javax.swing.BorderFactory.createEmptyBorder(vertical, horizontal, vertical, horizontal)));
+        }
+
+        if (bottomPanel != null) {
+            bottomPanel.revalidate();
+            bottomPanel.repaint();
+        }
+    }
+
     private void applyPanelDimensions(int width, int height) {
         panelWidth = Math.max(640, width);
         panelHeight = Math.max(480, height);
@@ -1179,10 +1295,10 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private JPanel createCommandPanel() {
-        JPanel commandPanel = new JPanel(new BorderLayout());
-        commandPanel.setOpaque(true);
-        commandPanel.setBackground(new Color(14, 20, 30));
-        commandPanel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setOpaque(true);
+        panel.setBackground(new Color(14, 20, 30));
+        panel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
                 javax.swing.BorderFactory.createLineBorder(new Color(32, 44, 60)),
                 javax.swing.BorderFactory.createEmptyBorder(6, 8, 6, 8)));
 
@@ -1203,10 +1319,10 @@ public class HeroLineWarsGame extends JFrame {
             }
         });
         header.add(playerSelector, BorderLayout.EAST);
-        commandPanel.add(header, BorderLayout.NORTH);
+        panel.add(header, BorderLayout.NORTH);
 
-        JPanel unitButtonPanel = new JPanel(new GridLayout(1, 0, 4, 4));
-        unitButtonPanel.setOpaque(false);
+        commandUnitPanel = new JPanel(new GridLayout(1, 0, 4, 4));
+        commandUnitPanel.setOpaque(false);
         unitButtons.clear();
         for (UnitType type : UnitType.values()) {
             JButton button = new JButton(formatUnitButtonLabel(type));
@@ -1214,21 +1330,21 @@ public class HeroLineWarsGame extends JFrame {
             button.addActionListener(e -> attemptSendUnit(type));
             stylePrimaryButton(button);
             unitButtons.put(type, button);
-            unitButtonPanel.add(button);
+            commandUnitPanel.add(button);
         }
-        unitButtonPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 0, 2, 0));
-        commandPanel.add(unitButtonPanel, BorderLayout.CENTER);
+        commandUnitPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 0, 2, 0));
+        panel.add(commandUnitPanel, BorderLayout.CENTER);
 
-        JPanel footer = new JPanel(new BorderLayout());
-        footer.setOpaque(false);
+        commandFooterPanel = new JPanel(new BorderLayout());
+        commandFooterPanel.setOpaque(false);
 
-        JPanel utilityPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0));
-        utilityPanel.setOpaque(false);
-        JButton inventoryButton = new JButton("Inventory");
+        commandUtilityPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0));
+        commandUtilityPanel.setOpaque(false);
+        inventoryButton = new JButton("Inventory");
         inventoryButton.addActionListener(e -> openInventoryDialog(getActiveHero()));
-        JButton shopButton = new JButton("Open Shop");
+        shopButton = new JButton("Open Shop");
         shopButton.addActionListener(e -> openShopDialog(getActiveHero()));
-        JButton pauseButton = new JButton("Pause");
+        pauseButton = new JButton("Pause");
         pauseButton.addActionListener(e -> openPauseMenu());
         styleSecondaryButton(inventoryButton);
         styleSecondaryButton(shopButton);
@@ -1236,16 +1352,21 @@ public class HeroLineWarsGame extends JFrame {
         applyCategoryIcon(inventoryButton, IconLibrary.Category.INVENTORY);
         applyCategoryIcon(shopButton, IconLibrary.Category.SHOP);
         applyCategoryIcon(pauseButton, IconLibrary.Category.PAUSE);
-        utilityPanel.add(inventoryButton);
-        utilityPanel.add(shopButton);
-        utilityPanel.add(pauseButton);
-        footer.add(utilityPanel, BorderLayout.EAST);
+        commandUtilityPanel.add(inventoryButton);
+        commandUtilityPanel.add(shopButton);
+        commandUtilityPanel.add(pauseButton);
+        commandFooterPanel.add(commandUtilityPanel, BorderLayout.EAST);
 
-        commandPanel.add(footer, BorderLayout.SOUTH);
+        panel.add(commandFooterPanel, BorderLayout.SOUTH);
+
+        commandUtilityButtons.clear();
+        commandUtilityButtons.add(inventoryButton);
+        commandUtilityButtons.add(shopButton);
+        commandUtilityButtons.add(pauseButton);
 
         refreshPlayerSelector();
 
-        return commandPanel;
+        return panel;
     }
 
     private String formatUnitButtonLabel(UnitType type) {
@@ -1330,12 +1451,16 @@ public class HeroLineWarsGame extends JFrame {
 
     private JPanel createHeroInterfacePanel() {
         JPanel panel = new JPanel(new GridLayout(0, 1, 3, 3));
+        heroInterfaceLayout = (GridLayout) panel.getLayout();
         panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 10, 6, 10));
         panel.setBackground(new Color(18, 24, 32));
 
         Font bold = heroSummaryLabel.getFont().deriveFont(Font.BOLD, 14f);
         heroSummaryLabel.setFont(bold);
         heroSummaryLabel.setForeground(Color.WHITE);
+        heroSummaryFontNormal = heroSummaryLabel.getFont();
+        heroSummaryFontCompact = heroSummaryFontNormal
+                .deriveFont(Math.max(12f, heroSummaryFontNormal.getSize2D() - 1.5f));
 
         heroAttributesLabel.setForeground(new Color(200, 220, 255));
         heroCombatLabel.setForeground(new Color(200, 220, 255));
@@ -1349,9 +1474,16 @@ public class HeroLineWarsGame extends JFrame {
         applyCategoryIcon(heroResourceLabel, IconLibrary.Category.RESOURCES);
         applyCategoryIcon(upgradeSummaryLabel, IconLibrary.Category.ATTRIBUTES);
 
+        heroDetailFontNormal = heroAttributesLabel.getFont();
+        heroDetailFontCompact = heroDetailFontNormal
+                .deriveFont(Math.max(11f, heroDetailFontNormal.getSize2D() - 1f));
+
         configureUpgradeButton(upgradeStrengthButton, "Strength", Hero.PrimaryAttribute.STRENGTH);
         configureUpgradeButton(upgradeDexterityButton, "Dexterity", Hero.PrimaryAttribute.DEXTERITY);
         configureUpgradeButton(upgradeIntelligenceButton, "Intelligence", Hero.PrimaryAttribute.INTELLIGENCE);
+        upgradeButtonFontNormal = upgradeStrengthButton.getFont();
+        upgradeButtonFontCompact = upgradeButtonFontNormal
+                .deriveFont(Math.max(10f, upgradeButtonFontNormal.getSize2D() - 1.5f));
 
         panel.add(heroSummaryLabel);
         panel.add(heroAttributesLabel);
@@ -1362,6 +1494,7 @@ public class HeroLineWarsGame extends JFrame {
         upgradePanel.setOpaque(false);
         upgradePanel.add(upgradeSummaryLabel);
         JPanel upgradeButtonsRow = new JPanel(new GridLayout(1, 0, 4, 4));
+        heroUpgradeButtonsLayout = (GridLayout) upgradeButtonsRow.getLayout();
         upgradeButtonsRow.setOpaque(false);
         upgradeButtonsRow.add(upgradeStrengthButton);
         upgradeButtonsRow.add(upgradeDexterityButton);
@@ -2557,7 +2690,7 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private boolean shouldAllowPlayerLaneSwitch(double candidateTargetX) {
-        if (LOCK_HERO_TO_LANE) {
+        if (!heroLaneSwitchingEnabled) {
             return false;
         }
         double heroCenterX = heroX + HERO_WIDTH / 2.0;
@@ -2570,7 +2703,7 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private boolean shouldAllowEnemyLaneSwitch(double candidateTargetX) {
-        if (LOCK_ENEMY_TO_LANE) {
+        if (!enemyLaneSwitchingEnabled) {
             return false;
         }
         double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
@@ -2674,6 +2807,8 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private class BattlefieldPanel extends JPanel {
+        private final Timer edgePanTimer;
+
         BattlefieldPanel() {
             setPreferredSize(new Dimension(panelWidth, panelHeight));
             setBackground(new Color(8, 12, 18));
@@ -2689,11 +2824,17 @@ public class HeroLineWarsGame extends JFrame {
                 @Override
                 public void mouseDragged(MouseEvent e) {
                     handleDrag(e);
+                    maybeEdgePan();
                 }
 
                 @Override
                 public void mouseReleased(MouseEvent e) {
                     handleRelease();
+                }
+
+                @Override
+                public void mouseMoved(MouseEvent e) {
+                    maybeEdgePan();
                 }
             };
             addMouseListener(adapter);
@@ -2718,6 +2859,15 @@ public class HeroLineWarsGame extends JFrame {
                     ensureCameraWithinBounds();
                 }
             });
+
+            edgePanTimer = new Timer(TICK_MILLIS, e -> maybeEdgePan());
+            edgePanTimer.start();
+        }
+
+        @Override
+        public void removeNotify() {
+            edgePanTimer.stop();
+            super.removeNotify();
         }
 
         private void handleClick(MouseEvent e) {
@@ -2756,6 +2906,33 @@ public class HeroLineWarsGame extends JFrame {
 
         private void handleRelease() {
             // No-op for now but kept for clarity and future interactions.
+        }
+
+        private void maybeEdgePan() {
+            if (!isShowing()) {
+                return;
+            }
+            Point position = getMousePosition();
+            if (position == null) {
+                return;
+            }
+            int width = getWidth();
+            int height = getHeight();
+            double deltaX = 0;
+            double deltaY = 0;
+            if (position.x <= EDGE_SCROLL_THRESHOLD) {
+                deltaX -= EDGE_SCROLL_SPEED / cameraZoom;
+            } else if (position.x >= width - EDGE_SCROLL_THRESHOLD) {
+                deltaX += EDGE_SCROLL_SPEED / cameraZoom;
+            }
+            if (position.y <= EDGE_SCROLL_THRESHOLD) {
+                deltaY -= EDGE_SCROLL_SPEED / cameraZoom;
+            } else if (position.y >= height - EDGE_SCROLL_THRESHOLD) {
+                deltaY += EDGE_SCROLL_SPEED / cameraZoom;
+            }
+            if (deltaX != 0 || deltaY != 0) {
+                panCamera(deltaX, deltaY);
+            }
         }
 
         private void setupKeyBindings() {
@@ -3552,7 +3729,7 @@ public class HeroLineWarsGame extends JFrame {
                     continue;
                 }
                 double distanceToHero = distance(unit.getCenterX(), unit.getCenterY(), heroCenterX, heroCenterY);
-                double sightRange = unit.getRange() * UNIT_SIGHT_RANGE_MULTIPLIER;
+                double sightRange = unit.getRange() * unitSightRangeMultiplier;
                 if (distanceToHero <= sightRange) {
                     unit.focusHero(heroCenterX, heroCenterY);
                     if (distanceToHero <= unit.getRange()) {
@@ -3581,7 +3758,7 @@ public class HeroLineWarsGame extends JFrame {
                     continue;
                 }
                 double distanceToEnemy = distance(unit.getCenterX(), unit.getCenterY(), enemyCenterX, enemyCenterY);
-                double sightRange = unit.getRange() * UNIT_SIGHT_RANGE_MULTIPLIER;
+                double sightRange = unit.getRange() * unitSightRangeMultiplier;
                 if (distanceToEnemy <= sightRange) {
                     unit.focusHero(enemyCenterX, enemyCenterY);
                     if (distanceToEnemy <= unit.getRange()) {
@@ -3934,6 +4111,10 @@ public class HeroLineWarsGame extends JFrame {
         private final JCheckBox inventoryCheck;
         private final JCheckBox controlsCheck;
         private final JCheckBox actionCheck;
+        private final JCheckBox laneSwitchCheck;
+        private final JCheckBox enemyLaneSwitchCheck;
+        private final JCheckBox compactHudCheck;
+        private final JSpinner unitSightSpinner;
 
         UiSettingsEditor() {
             panel = new JPanel();
@@ -3949,11 +4130,31 @@ public class HeroLineWarsGame extends JFrame {
             inventoryCheck = createCheckbox("Show inventory summary", showInventoryLabel);
             controlsCheck = createCheckbox("Show controls helper", showControlsHint);
             actionCheck = createCheckbox("Show action ticker", showActionSummary);
+            laneSwitchCheck = createCheckbox("Allow player lane switching", heroLaneSwitchingEnabled);
+            enemyLaneSwitchCheck = createCheckbox("Allow enemy lane switching", enemyLaneSwitchingEnabled);
+            compactHudCheck = createCheckbox("Use compact command HUD", compactBottomHud);
+
+            unitSightSpinner = new JSpinner(
+                    new SpinnerNumberModel(unitSightRangeMultiplier, 0.5, 3.0, 0.05));
+            ((JSpinner.NumberEditor) unitSightSpinner.getEditor()).getFormat().setMinimumFractionDigits(2);
+            ((JSpinner.NumberEditor) unitSightSpinner.getEditor()).getFormat().setMaximumFractionDigits(2);
 
             panel.add(queueCheck);
             panel.add(inventoryCheck);
             panel.add(controlsCheck);
             panel.add(actionCheck);
+            panel.add(javax.swing.Box.createVerticalStrut(10));
+            panel.add(laneSwitchCheck);
+            panel.add(enemyLaneSwitchCheck);
+            panel.add(compactHudCheck);
+
+            JPanel sightRow = new JPanel(new BorderLayout(6, 0));
+            sightRow.setOpaque(false);
+            JLabel sightLabel = new JLabel("Unit line-of-sight multiplier:");
+            sightRow.add(sightLabel, BorderLayout.WEST);
+            sightRow.add(unitSightSpinner, BorderLayout.EAST);
+            panel.add(javax.swing.Box.createVerticalStrut(6));
+            panel.add(sightRow);
             panel.add(javax.swing.Box.createVerticalGlue());
         }
 
@@ -3972,6 +4173,13 @@ public class HeroLineWarsGame extends JFrame {
             showInventoryLabel = inventoryCheck.isSelected();
             showControlsHint = controlsCheck.isSelected();
             showActionSummary = actionCheck.isSelected();
+            heroLaneSwitchingEnabled = laneSwitchCheck.isSelected();
+            enemyLaneSwitchingEnabled = enemyLaneSwitchCheck.isSelected();
+            compactBottomHud = compactHudCheck.isSelected();
+            unitSightRangeMultiplier = ((Number) unitSightSpinner.getValue()).doubleValue();
+            applyHudDensity();
+            updateHeroLaneLock();
+            updateEnemyLaneLock();
         }
 
         void resetToDefaults() {
@@ -3979,6 +4187,10 @@ public class HeroLineWarsGame extends JFrame {
             inventoryCheck.setSelected(true);
             controlsCheck.setSelected(true);
             actionCheck.setSelected(true);
+            laneSwitchCheck.setSelected(true);
+            enemyLaneSwitchCheck.setSelected(true);
+            compactHudCheck.setSelected(true);
+            unitSightSpinner.setValue(DEFAULT_UNIT_SIGHT_RANGE_MULTIPLIER);
             apply();
         }
     }
