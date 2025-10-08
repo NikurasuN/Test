@@ -24,34 +24,12 @@ cmake --build build
 ./build/hero_line_wars
 ```
 
-You can now use the provided launchers to build (if necessary) and start the duel
-without touching CMake, Python, or an IDE. From the project root run:
-
-```bash
-./launch-game.sh [game arguments]
-```
-
-or on Windows double-click `launch-game.cmd` (or run it from Command Prompt):
-
-```cmd
-launch-game.cmd [game arguments]
-```
-
-Both scripts locate a native C++17 compiler on your `PATH`, rebuild the game only when
-the sources change, and then start the freshly built `hero_line_wars` executable. If you
-already have a compiled binary in the script's private `.launcher-build` directory the
-launch step is instant.
-
-After building with CMake, a platform-native launcher (`run_game` on macOS/Linux, `run_game.exe` on Windows) is generated in the build output. Double-click it (or run it from the terminal) to locate the appropriate `hero_line_wars` binary in the build tree and start the duel without scripting.
-
-On Windows the launcher now bundles a fallback build of the game. If no standalone `hero_line_wars.exe` sits next to the launcher, it automatically boots the embedded version instead. That means you can ship **just** the `run_game.exe` produced by CMake to another Windows PC that lacks developer tools—double-clicking it starts the duel immediately.
-
 ```bash
 cmake -S . -B build/release -DCMAKE_BUILD_TYPE=Release
 cmake --build build/release --config Release
 ./build/release/hero_line_wars
 ```
 
-## Windows executable helper
+## Creating a Release build
 
-If you need to create a redistributable folder, configure a Release build with CMake and copy the resulting executables from the build output (including `run_game`/`run_game.exe` and `hero_line_wars`/`hero_line_wars.exe`) into your desired directory.
+The commands above demonstrate how to configure and build an optimised release version of the game. Once the build completes, run the resulting `hero_line_wars` binary from the appropriate build directory for your platform.
