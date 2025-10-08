@@ -51,9 +51,8 @@ public class HeroLineWarsGame extends JFrame {
     private static final double HERO_SPEED = 4.5;
     private static final double ENEMY_SPEED = 3.4;
     private static final int ATTACK_COOLDOWN_TICKS = 20;
-    private static final int BASE_ATTACK_COOLDOWN_TICKS = 28;
+    private static final int PORTAL_ATTACK_COOLDOWN_TICKS = 28;
     private static final int RESPAWN_TICKS = 120;
-    private static final int BASE_DAMAGE_PER_TICK = 55;
     private static final int TICK_MILLIS = 30;
     private static final int INCOME_INTERVAL_TICKS = 120;
     private static final int WAVE_INTERVAL_TICKS = 240;
@@ -63,11 +62,11 @@ public class HeroLineWarsGame extends JFrame {
     private static final int UNIT_SIZE = 28;
     private static final int ATTRIBUTE_UPGRADE_COST = 120;
     private static final int UNIT_ATTACK_COOLDOWN_TICKS = 24;
-    private static final int UNIT_BASE_ATTACK_COOLDOWN_TICKS = 30;
     private static final int UNIT_KILL_REWARD = 6;
     private static final int SPAWN_SHIELD_TICKS = 60;
     private static final int EXPERIENCE_PER_UNIT_KILL = 18;
     private static final int EXPERIENCE_PER_HERO_KILL = 150;
+    private static final int PORTAL_BREACH_THRESHOLD = 12;
 
     private static final Item[] SHOP_ITEMS = new Item[] {
             new Item("Sharpened Arrows", 6, 0, 85,
@@ -142,8 +141,8 @@ public class HeroLineWarsGame extends JFrame {
     private int enemyBaseAttackCooldown;
     private int heroRespawnTimer;
     private int enemyRespawnTimer;
-    private int playerBaseHealth;
-    private int enemyBaseHealth;
+    private int playerPortalBreaches;
+    private int enemyPortalBreaches;
     private int playerKills;
     private int enemyKills;
     private boolean gameOver;
@@ -378,28 +377,29 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private void openPauseMenu() {
-        if (gameOver || gameTimer == null) {
+        boolean battleEnded = gameOver;
+        if (gameTimer == null && !battleEnded) {
             return;
         }
-        if (paused) {
-            resumeGame();
-            return;
+        if (!battleEnded) {
+            if (paused) {
+                resumeGame();
+                return;
+            }
+            pauseGame();
         }
-        pauseGame();
 
-        JDialog dialog = new JDialog(this, "Paused", true);
+        String title = battleEnded ? "Battle Menu" : "Paused";
+        JDialog dialog = new JDialog(this, title, true);
         dialog.setLayout(new BorderLayout());
 
-        JLabel infoLabel = new JLabel("Game paused. Choose an option.", SwingConstants.CENTER);
+        String infoText = battleEnded ? "The battle has concluded. Choose what to do next." :
+                "Game paused. Choose an option.";
+        JLabel infoLabel = new JLabel(infoText, SwingConstants.CENTER);
         infoLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(14, 10, 10, 10));
         dialog.add(infoLabel, BorderLayout.NORTH);
 
         JPanel buttonsPanel = new JPanel(new GridLayout(0, 1, 8, 8));
-        JButton resumeButton = new JButton("Resume");
-        resumeButton.addActionListener(e -> {
-            dialog.dispose();
-            resumeGame();
-        });
         JButton restartButton = new JButton("Restart Battle");
         restartButton.addActionListener(e -> {
             dialog.dispose();
@@ -410,7 +410,14 @@ public class HeroLineWarsGame extends JFrame {
             dialog.dispose();
             dispose();
         });
-        buttonsPanel.add(resumeButton);
+        if (!battleEnded) {
+            JButton resumeButton = new JButton("Resume");
+            resumeButton.addActionListener(e -> {
+                dialog.dispose();
+                resumeGame();
+            });
+            buttonsPanel.add(resumeButton);
+        }
         buttonsPanel.add(restartButton);
         buttonsPanel.add(exitButton);
         buttonsPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 16, 16, 16));
@@ -420,7 +427,9 @@ public class HeroLineWarsGame extends JFrame {
         dialog.addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
-                resumeGame();
+                if (!battleEnded) {
+                    resumeGame();
+                }
             }
 
             @Override
@@ -462,12 +471,13 @@ public class HeroLineWarsGame extends JFrame {
         aiHero = null;
         enemyIsHuman = false;
         activeHeroIndex = 0;
-        playerBaseHealth = 1000;
-        enemyBaseHealth = 1000;
+        playerPortalBreaches = 0;
+        enemyPortalBreaches = 0;
         playerKills = 0;
         enemyKills = 0;
         lastActionMessage = "Select a hero to begin the battle.";
-        baseLabel.setText("Base HP - You: 0 | Enemy: 0");
+        baseLabel.setText(String.format("Portal Breaches - Player 1: 0/%d | Enemy: 0/%d", PORTAL_BREACH_THRESHOLD,
+                PORTAL_BREACH_THRESHOLD));
         heroLabel.setText("Hero: None selected");
         aiLabel.setText("Enemy Hero: Unknown");
         killsLabel.setText("Kills - You: 0 | Enemy: 0");
@@ -665,7 +675,7 @@ public class HeroLineWarsGame extends JFrame {
         add(battlefieldPanel, BorderLayout.CENTER);
 
         JPanel bottomPanel = new JPanel(new BorderLayout());
-        bottomPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(12, 16, 16, 16));
+        bottomPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 16, 12, 16));
         bottomPanel.setBackground(new Color(12, 18, 28));
 
         bottomPanel.add(createHeroInterfacePanel(), BorderLayout.WEST);
@@ -716,13 +726,14 @@ public class HeroLineWarsGame extends JFrame {
         commandPanel.setBackground(new Color(14, 20, 30));
         commandPanel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
                 javax.swing.BorderFactory.createLineBorder(new Color(32, 44, 60)),
-                javax.swing.BorderFactory.createEmptyBorder(12, 12, 12, 12)));
+                javax.swing.BorderFactory.createEmptyBorder(8, 10, 8, 10)));
 
-        JPanel header = new JPanel(new BorderLayout(10, 0));
+        JPanel header = new JPanel(new BorderLayout(8, 0));
         header.setOpaque(false);
         JLabel helpLabel = new JLabel(
                 "Click to move. Use the selector to issue orders for each commander.");
         helpLabel.setForeground(new Color(210, 220, 235));
+        helpLabel.setFont(helpLabel.getFont().deriveFont(12.5f));
         header.add(helpLabel, BorderLayout.CENTER);
 
         playerSelector.setFocusable(false);
@@ -736,7 +747,7 @@ public class HeroLineWarsGame extends JFrame {
         header.add(playerSelector, BorderLayout.EAST);
         commandPanel.add(header, BorderLayout.NORTH);
 
-        JPanel unitButtonPanel = new JPanel(new GridLayout(1, 0, 6, 6));
+        JPanel unitButtonPanel = new JPanel(new GridLayout(1, 0, 4, 4));
         unitButtonPanel.setOpaque(false);
         for (UnitType type : UnitType.values()) {
             JButton button = new JButton(String.format("%s (%dG, +%d income)",
@@ -745,13 +756,13 @@ public class HeroLineWarsGame extends JFrame {
             stylePrimaryButton(button);
             unitButtonPanel.add(button);
         }
-        unitButtonPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 0, 10, 0));
+        unitButtonPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 0, 6, 0));
         commandPanel.add(unitButtonPanel, BorderLayout.CENTER);
 
         JPanel footer = new JPanel(new BorderLayout());
         footer.setOpaque(false);
 
-        JPanel utilityPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT));
+        JPanel utilityPanel = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 8, 0));
         utilityPanel.setOpaque(false);
         JButton inventoryButton = new JButton("Inventory");
         inventoryButton.addActionListener(e -> openInventoryDialog(getActiveHero()));
@@ -786,7 +797,8 @@ public class HeroLineWarsGame extends JFrame {
         button.setForeground(Color.WHITE);
         button.setBorder(javax.swing.BorderFactory.createCompoundBorder(
                 javax.swing.BorderFactory.createLineBorder(new Color(56, 92, 130)),
-                javax.swing.BorderFactory.createEmptyBorder(8, 12, 8, 12)));
+                javax.swing.BorderFactory.createEmptyBorder(4, 10, 4, 10)));
+        button.setFont(button.getFont().deriveFont(13f));
     }
 
     private void styleSecondaryButton(JButton button) {
@@ -795,12 +807,13 @@ public class HeroLineWarsGame extends JFrame {
         button.setForeground(new Color(235, 240, 250));
         button.setBorder(javax.swing.BorderFactory.createCompoundBorder(
                 javax.swing.BorderFactory.createLineBorder(new Color(70, 88, 110)),
-                javax.swing.BorderFactory.createEmptyBorder(6, 10, 6, 10)));
+                javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8)));
+        button.setFont(button.getFont().deriveFont(12.5f));
     }
 
     private JPanel createHeroInterfacePanel() {
-        JPanel panel = new JPanel(new GridLayout(0, 1, 4, 4));
-        panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 12, 8, 12));
+        JPanel panel = new JPanel(new GridLayout(0, 1, 3, 3));
+        panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 10, 6, 10));
         panel.setBackground(new Color(18, 24, 32));
 
         Font bold = heroSummaryLabel.getFont().deriveFont(Font.BOLD, 14f);
@@ -825,7 +838,7 @@ public class HeroLineWarsGame extends JFrame {
         JPanel upgradePanel = new JPanel(new GridLayout(0, 1, 4, 4));
         upgradePanel.setOpaque(false);
         upgradePanel.add(upgradeSummaryLabel);
-        JPanel upgradeButtonsRow = new JPanel(new GridLayout(1, 0, 6, 6));
+        JPanel upgradeButtonsRow = new JPanel(new GridLayout(1, 0, 4, 4));
         upgradeButtonsRow.setOpaque(false);
         upgradeButtonsRow.add(upgradeStrengthButton);
         upgradeButtonsRow.add(upgradeDexterityButton);
@@ -841,7 +854,8 @@ public class HeroLineWarsGame extends JFrame {
         button.setFocusPainted(false);
         button.setBackground(new Color(36, 46, 60));
         button.setForeground(Color.WHITE);
-        button.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 10, 6, 10));
+        button.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 8, 4, 8));
+        button.setFont(button.getFont().deriveFont(12.5f));
         button.setToolTipText(String.format("Spend %d gold to increase %s by 1.", ATTRIBUTE_UPGRADE_COST,
                 attributeName.toLowerCase()));
         button.addActionListener(e -> attemptAttributeUpgrade(attribute, attributeName));
@@ -926,8 +940,8 @@ public class HeroLineWarsGame extends JFrame {
         modeLabel.setText(enemyIsHuman ? "Hero Line Wars - Local Versus" : "Hero Line Wars - Live Battle");
         playerTeam = new Team(enemyIsHuman ? "Player 1" : "Player", playerHero);
         enemyTeam = new Team(enemyIsHuman ? "Player 2" : "Enemy", aiHero);
-        playerBaseHealth = 1000;
-        enemyBaseHealth = 1000;
+        playerPortalBreaches = 0;
+        enemyPortalBreaches = 0;
         playerKills = 0;
         enemyKills = 0;
         heroAlive = true;
@@ -1286,6 +1300,26 @@ public class HeroLineWarsGame extends JFrame {
         }
     }
 
+    private void registerPortalBreach(boolean byPlayer, String description) {
+        if (gameOver) {
+            return;
+        }
+        if (byPlayer) {
+            enemyPortalBreaches = Math.min(PORTAL_BREACH_THRESHOLD, enemyPortalBreaches + 1);
+        } else {
+            playerPortalBreaches = Math.min(PORTAL_BREACH_THRESHOLD, playerPortalBreaches + 1);
+        }
+        int breaches = byPlayer ? enemyPortalBreaches : playerPortalBreaches;
+        String context;
+        if (description != null && !description.isBlank()) {
+            context = description;
+        } else {
+            context = byPlayer ? "Your units breached the enemy portal!" : "Enemy units slipped through your portal!";
+        }
+        lastActionMessage = String.format("%s (%d/%d)", context, breaches, PORTAL_BREACH_THRESHOLD);
+        checkVictoryConditions();
+    }
+
     private void updateProjectiles() {
         if (projectiles.isEmpty()) {
             return;
@@ -1344,23 +1378,23 @@ public class HeroLineWarsGame extends JFrame {
         if (heroAlive && !enemyAlive) {
             if (heroBaseAttackCooldown <= 0 && heroX + HERO_WIDTH >= getEnemyBaseX()
                     && heroCenterY >= enemyBaseTop && heroCenterY <= enemyBaseBottom) {
-                enemyBaseHealth = Math.max(0, enemyBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, playerHero.getAttack() * 3));
+                registerPortalBreach(true,
+                        String.format("%s forced a breach in the enemy portal!", playerHero.getName()));
                 heroBaseAttackCooldown = getHeroBaseAttackCooldownTicks(playerHero);
-                checkVictoryConditions();
             }
         }
         if (enemyAlive && !heroAlive) {
             if (enemyBaseAttackCooldown <= 0 && enemyX <= getPlayerBaseX() + BASE_WIDTH
                     && enemyCenterY >= playerBaseTop && enemyCenterY <= playerBaseBottom) {
-                playerBaseHealth = Math.max(0, playerBaseHealth - Math.max(BASE_DAMAGE_PER_TICK, aiHero.getAttack() * 3));
+                registerPortalBreach(false,
+                        String.format("Enemy %s ruptured your portal defenses!", aiHero.getName()));
                 enemyBaseAttackCooldown = getHeroBaseAttackCooldownTicks(aiHero);
-                checkVictoryConditions();
             }
         }
     }
 
     private int getHeroBaseAttackCooldownTicks(Hero hero) {
-        return Math.max(12, (int) Math.round(BASE_ATTACK_COOLDOWN_TICKS / hero.getAttackSpeedMultiplier()));
+        return Math.max(12, (int) Math.round(PORTAL_ATTACK_COOLDOWN_TICKS / hero.getAttackSpeedMultiplier()));
     }
 
     private void onPlayerHeroDefeated() {
@@ -1393,9 +1427,9 @@ public class HeroLineWarsGame extends JFrame {
         if (gameOver) {
             return;
         }
-        if (enemyBaseHealth <= 0) {
+        if (enemyPortalBreaches >= PORTAL_BREACH_THRESHOLD) {
             finishBattle(true);
-        } else if (playerBaseHealth <= 0) {
+        } else if (playerPortalBreaches >= PORTAL_BREACH_THRESHOLD) {
             finishBattle(false);
         }
     }
@@ -1405,8 +1439,9 @@ public class HeroLineWarsGame extends JFrame {
         if (gameTimer != null) {
             gameTimer.stop();
         }
-        String message = playerWon ? "Victory! The enemy base has fallen." : "Defeat! Your base has been destroyed.";
-        lastActionMessage = playerWon ? "Victory! Enemy base destroyed." : "Defeat! Your base has fallen.";
+        String message = playerWon ? "Victory! The enemy portal has been overrun." :
+                "Defeat! Too many foes breached your portal.";
+        lastActionMessage = playerWon ? "Victory! Enemy portal sealed." : "Defeat! Your portal has collapsed.";
         refreshHud();
         battlefieldPanel.repaint();
         JOptionPane.showMessageDialog(this, message, "Battle Complete", JOptionPane.INFORMATION_MESSAGE);
@@ -1417,8 +1452,9 @@ public class HeroLineWarsGame extends JFrame {
             return;
         }
         String enemyName = enemyIsHuman ? "Player 2" : "Enemy";
-        baseLabel.setText(String.format("Base HP - Player 1: %d | %s: %d", Math.max(0, playerBaseHealth), enemyName,
-                Math.max(0, enemyBaseHealth)));
+        baseLabel.setText(String.format("Portal Breaches - Player 1: %d/%d | %s: %d/%d",
+                playerPortalBreaches, PORTAL_BREACH_THRESHOLD, enemyName, enemyPortalBreaches,
+                PORTAL_BREACH_THRESHOLD));
         heroLabel.setText(String.format("Player 1 Hero: %s (Lv %d) | HP %d/%d | Shield %d/%d | ATK %d | DEF %d",
                 playerHero.getName(), playerHero.getLevel(),
                 Math.max(0, playerHero.getCurrentHealth()), playerHero.getMaxHealth(), playerHero.getCurrentShield(), playerHero.getMaxEnergyShield(),
@@ -1719,6 +1755,11 @@ public class HeroLineWarsGame extends JFrame {
 
     private double getEnemyBaseCenterY() {
         return getEnemyClusterCenterY();
+    }
+
+    private double getPortalProgress(boolean playerPortal) {
+        int breaches = playerPortal ? playerPortalBreaches : enemyPortalBreaches;
+        return Math.min(1.0, Math.max(0.0, breaches / (double) PORTAL_BREACH_THRESHOLD));
     }
 
     private double clampHorizontalTarget(double value) {
@@ -2381,23 +2422,55 @@ public class HeroLineWarsGame extends JFrame {
             g2.setPaint(glow);
             g2.fillRoundRect(baseX - 6, baseY - 6, BASE_WIDTH + 12, baseHeight + 12, 18, 18);
             g2.setPaint(null);
-            g2.setColor(new Color(32, 40, 52));
+            g2.setColor(new Color(28, 36, 48));
             g2.fillRoundRect(baseX, baseY, BASE_WIDTH, baseHeight, 18, 18);
 
-            int barWidth = BASE_WIDTH;
-            int barHeight = 10;
-            int currentHp;
-            int maxHp = 1000;
-            if (baseX <= BASE_MARGIN + 1) {
-                currentHp = Math.max(0, playerBaseHealth);
-            } else {
-                currentHp = Math.max(0, enemyBaseHealth);
+            boolean playerPortal = baseX <= BASE_MARGIN + 1;
+            double progress = getPortalProgress(playerPortal);
+            int portalDiameter = Math.min(BASE_WIDTH - 18, baseHeight - 30);
+            int portalX = baseX + (BASE_WIDTH - portalDiameter) / 2;
+            int portalY = baseY + (baseHeight - portalDiameter) / 2;
+
+            GradientPaint portalPaint = new GradientPaint(portalX, portalY, color.brighter(), portalX + portalDiameter,
+                    portalY + portalDiameter, color.darker());
+            g2.setPaint(portalPaint);
+            g2.fillOval(portalX, portalY, portalDiameter, portalDiameter);
+            g2.setPaint(null);
+
+            int innerDiameter = (int) Math.round(portalDiameter * 0.55);
+            int innerOffset = (portalDiameter - innerDiameter) / 2;
+            g2.setColor(new Color(12, 18, 28, 220));
+            g2.fillOval(portalX + innerOffset, portalY + innerOffset, innerDiameter, innerDiameter);
+
+            g2.setStroke(new BasicStroke(3f));
+            g2.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 200));
+            g2.drawOval(portalX, portalY, portalDiameter, portalDiameter);
+
+            int ringDiameter = portalDiameter + 14;
+            int ringX = portalX - 7;
+            int ringY = portalY - 7;
+            g2.setColor(new Color(255, 255, 255, 70));
+            g2.setStroke(new BasicStroke(6f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.drawOval(ringX, ringY, ringDiameter, ringDiameter);
+
+            if (progress > 0) {
+                g2.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 220));
+                int arcAngle = (int) Math.round(progress * -360);
+                g2.drawArc(ringX, ringY, ringDiameter, ringDiameter, 90, arcAngle);
             }
-            double ratio = Math.min(1.0, currentHp / (double) maxHp);
-            g2.setColor(new Color(35, 35, 35, 200));
-            g2.fillRoundRect(baseX, baseY - barHeight - 6, barWidth, barHeight, 8, 8);
-            g2.setColor(new Color(70, 220, 90));
-            g2.fillRoundRect(baseX, baseY - barHeight - 6, (int) Math.round(barWidth * ratio), barHeight, 8, 8);
+
+            g2.setStroke(new BasicStroke(1.5f));
+            g2.setColor(new Color(255, 255, 255, 160));
+            for (int i = 0; i < 3; i++) {
+                double angle = (System.currentTimeMillis() / 40.0 + i * 80) % 360;
+                double radians = Math.toRadians(angle);
+                int swirlRadius = innerDiameter / 2;
+                int centerX = portalX + portalDiameter / 2;
+                int centerY = portalY + portalDiameter / 2;
+                int endX = centerX + (int) Math.round(Math.cos(radians) * swirlRadius * 0.9);
+                int endY = centerY + (int) Math.round(Math.sin(radians) * swirlRadius * 0.9);
+                g2.drawLine(centerX, centerY, endX, endY);
+            }
         }
 
         private void drawHero(Graphics2D g2, int x, int y, String name, int currentHp, int maxHp, Color color) {
@@ -2780,10 +2853,10 @@ public class HeroLineWarsGame extends JFrame {
             if (unit.x + UNIT_SIZE >= getEnemyBaseX()) {
                 unit.lockAt(getEnemyBaseX() - UNIT_SIZE);
                 unit.setTargetCenterY(getEnemyBaseCenterY());
-                if (unit.tryAttackBase()) {
-                    enemyBaseHealth = Math.max(0, enemyBaseHealth - unit.type.getDamage());
-                    checkVictoryConditions();
-                }
+                registerPortalBreach(true,
+                        String.format("%s slipped through the enemy portal!", unit.getType().getDisplayName()));
+                iterator.remove();
+                continue;
             }
             if (unit.isDead()) {
                 iterator.remove();
@@ -2796,10 +2869,10 @@ public class HeroLineWarsGame extends JFrame {
             if (unit.x <= getPlayerBaseX() + BASE_WIDTH) {
                 unit.lockAt(getPlayerBaseX() + BASE_WIDTH);
                 unit.setTargetCenterY(getPlayerBaseCenterY());
-                if (unit.tryAttackBase()) {
-                    playerBaseHealth = Math.max(0, playerBaseHealth - unit.type.getDamage());
-                    checkVictoryConditions();
-                }
+                registerPortalBreach(false,
+                        String.format("Enemy %s reached your portal!", unit.getType().getDisplayName()));
+                iterator.remove();
+                continue;
             }
             if (unit.isDead()) {
                 iterator.remove();
@@ -2998,7 +3071,6 @@ public class HeroLineWarsGame extends JFrame {
         private double x;
         private int health;
         private int attackCooldown;
-        private int baseAttackCooldown;
         private boolean engaged;
         private boolean engagedLastTick;
         private final boolean fromPlayer;
@@ -3017,7 +3089,6 @@ public class HeroLineWarsGame extends JFrame {
             this.y = y;
             this.health = type.getHealth();
             this.attackCooldown = 0;
-            this.baseAttackCooldown = 0;
             this.fromPlayer = fromPlayer;
             this.laneIndex = laneIndex;
             this.spawnShield = SPAWN_SHIELD_TICKS;
@@ -3036,9 +3107,6 @@ public class HeroLineWarsGame extends JFrame {
             targetY = clamp(targetY, topLimit, bottomLimit);
             if (attackCooldown > 0) {
                 attackCooldown--;
-            }
-            if (baseAttackCooldown > 0) {
-                baseAttackCooldown--;
             }
             if (spawnShield > 0) {
                 spawnShield--;
@@ -3071,14 +3139,6 @@ public class HeroLineWarsGame extends JFrame {
                 target.takeDamage(type.getDamage());
                 attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
             }
-        }
-
-        boolean tryAttackBase() {
-            if (baseAttackCooldown <= 0) {
-                baseAttackCooldown = UNIT_BASE_ATTACK_COOLDOWN_TICKS;
-                return true;
-            }
-            return false;
         }
 
         boolean tryAttackHero(Hero hero) {
