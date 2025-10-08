@@ -19,6 +19,7 @@ target_include_directories(hero_line_wars PRIVATE src)
 if (WIN32)
     add_executable(run_game_launcher
         src/RunGameLauncher.cpp)
+    set_target_properties(run_game_launcher PROPERTIES WIN32_EXECUTABLE ON)
 else()
     add_executable(run_game_launcher
         src/RunGameLauncherPosix.cpp)
