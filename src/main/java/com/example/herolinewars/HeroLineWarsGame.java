@@ -1,12 +1,17 @@
 package com.example.herolinewars;
 
 import javax.swing.AbstractButton;
+import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTabbedPane;
+import javax.swing.SpinnerNumberModel;
 import javax.swing.SwingConstants;
 import javax.swing.SwingUtilities;
 import javax.swing.JTextArea;
@@ -15,6 +20,7 @@ import javax.swing.WindowConstants;
 import java.awt.BasicStroke;
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.Font;
 import java.awt.Graphics;
@@ -25,10 +31,14 @@ import java.awt.RenderingHints;
 import java.awt.geom.AffineTransform;
 import java.awt.event.ComponentAdapter;
 import java.awt.event.ComponentEvent;
+import java.awt.event.InputEvent;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.awt.event.WindowAdapter;
 import java.awt.event.WindowEvent;
+import java.util.ArrayList;
+import java.util.EnumMap;
+import java.util.List;
 import java.util.Random;
 import java.util.function.Consumer;
 import java.util.function.Supplier;
@@ -74,6 +84,9 @@ public class HeroLineWarsGame extends JFrame {
     private static final int EXPERIENCE_PER_HERO_KILL = 150;
     private static final int PORTAL_BREACH_THRESHOLD = 12;
     private static final double CAMERA_PAN_DELTA = 120;
+    private static final double CAMERA_ZOOM_STEP = 0.15;
+    private static final double CAMERA_MIN_ZOOM = 0.6;
+    private static final double CAMERA_MAX_ZOOM = 1.8;
     private static final boolean LOCK_HERO_TO_LANE = true;
     private static final boolean LOCK_ENEMY_TO_LANE = true;
 
@@ -103,6 +116,9 @@ public class HeroLineWarsGame extends JFrame {
     };
 
     private final Random random = new Random();
+    private final EnumMap<UnitType, UnitBalance> unitBalances = new EnumMap<>(UnitType.class);
+    private final EnumMap<UnitType, UnitBalance> defaultUnitBalances = new EnumMap<>(UnitType.class);
+    private final EnumMap<UnitType, JButton> unitButtons = new EnumMap<>(UnitType.class);
 
     private Hero playerHero;
     private Hero aiHero;
@@ -118,6 +134,7 @@ public class HeroLineWarsGame extends JFrame {
     private final JLabel killsLabel = new JLabel();
     private final JLabel economyLabel = new JLabel();
     private final JLabel actionLabel = new JLabel("Ready to launch units down the lane.");
+    private final JLabel controlsHintLabel = new JLabel();
     private final JLabel queueLabel = new JLabel("Next Wave: None queued.");
     private final JLabel inventoryLabel = new JLabel("Inventory: None");
     private final JLabel heroSummaryLabel = new JLabel("Hero interface locked until a hero is chosen.");
@@ -171,6 +188,7 @@ public class HeroLineWarsGame extends JFrame {
     private int activeHeroIndex;
     private double cameraX;
     private double cameraY;
+    private double cameraZoom = 1.0;
 
     private static final int PLAYER_DEFAULT_LANE = 0;
     private static final int ENEMY_DEFAULT_LANE = LANES_PER_SIDE - 1;
@@ -429,6 +447,10 @@ public class HeroLineWarsGame extends JFrame {
             dialog.dispose();
             dispose();
         });
+        JButton keybindsButton = new JButton("Keybinds & Controls");
+        keybindsButton.addActionListener(e -> openKeybindsDialog());
+        JButton developerButton = new JButton("Developer Settings");
+        developerButton.addActionListener(e -> openDeveloperSettingsDialog());
         if (!battleEnded) {
             JButton resumeButton = new JButton("Resume");
             resumeButton.addActionListener(e -> {
@@ -437,6 +459,8 @@ public class HeroLineWarsGame extends JFrame {
             });
             buttonsPanel.add(resumeButton);
         }
+        buttonsPanel.add(keybindsButton);
+        buttonsPanel.add(developerButton);
         buttonsPanel.add(restartButton);
         buttonsPanel.add(exitButton);
         buttonsPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 16, 16, 16));
@@ -460,6 +484,195 @@ public class HeroLineWarsGame extends JFrame {
         dialog.pack();
         dialog.setLocationRelativeTo(this);
         dialog.setVisible(true);
+    }
+
+    private void openKeybindsDialog() {
+        JDialog dialog = new JDialog(this, "Controls & Keybinds", true);
+        dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+        dialog.setLayout(new BorderLayout());
+
+        JLabel header = new JLabel("Review the default controls for solo and versus play.", SwingConstants.CENTER);
+        header.setBorder(javax.swing.BorderFactory.createEmptyBorder(14, 16, 8, 16));
+        dialog.add(header, BorderLayout.NORTH);
+
+        JPanel content = new JPanel();
+        content.setLayout(new BoxLayout(content, BoxLayout.Y_AXIS));
+        content.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 16, 8, 16));
+
+        content.add(createKeybindSection("General", new String[][] {
+                {"Pause / Menu", "Esc or P"},
+                {"Center Camera", "C"},
+                {"Zoom In", "+ / = or Mouse Wheel Up"},
+                {"Zoom Out", "- or Mouse Wheel Down"}
+        }));
+        content.add(javax.swing.Box.createVerticalStrut(12));
+        content.add(createKeybindSection("Solo Play", new String[][] {
+                {"Hero Movement", "W / A / S / D"},
+                {"Camera Pan", "Arrow Keys or Q / E / R / F"}
+        }));
+        content.add(javax.swing.Box.createVerticalStrut(12));
+        content.add(createKeybindSection("Local Versus", new String[][] {
+                {"Player 1 Hero", "W / A / S / D"},
+                {"Player 2 Hero", "Arrow Keys"},
+                {"Camera Pan", "Q / E / R / F or Shift + Arrow Keys"}
+        }));
+        content.add(javax.swing.Box.createVerticalStrut(12));
+        content.add(createKeybindSection("Mouse", new String[][] {
+                {"Issue Hero Move", "Left Click or Drag"},
+                {"Issue Enemy Move", "Right Click or Drag (Versus)"},
+                {"Zoom", "Mouse Wheel"}
+        }));
+
+        JScrollPane scrollPane = new JScrollPane(content);
+        scrollPane.setBorder(javax.swing.BorderFactory.createEmptyBorder());
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        dialog.add(scrollPane, BorderLayout.CENTER);
+
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(e -> dialog.dispose());
+        JPanel footer = new JPanel();
+        footer.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 16, 12, 16));
+        footer.add(closeButton);
+        dialog.add(footer, BorderLayout.SOUTH);
+
+        dialog.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                battlefieldPanel.requestFocusInWindow();
+            }
+        });
+
+        dialog.pack();
+        if (dialog.getWidth() < 420) {
+            dialog.setSize(new Dimension(420, dialog.getHeight()));
+        }
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    private void openDeveloperSettingsDialog() {
+        JDialog dialog = new JDialog(this, "Developer Settings", true);
+        dialog.setDefaultCloseOperation(WindowConstants.DISPOSE_ON_CLOSE);
+        dialog.setLayout(new BorderLayout());
+
+        JLabel header = new JLabel("Tweak gameplay values to iterate quickly.", SwingConstants.CENTER);
+        header.setBorder(javax.swing.BorderFactory.createEmptyBorder(14, 16, 8, 16));
+        dialog.add(header, BorderLayout.NORTH);
+
+        List<UnitBalanceEditor> unitEditors = new ArrayList<>();
+        JTabbedPane tabs = new JTabbedPane();
+        tabs.addTab("Units", createUnitBalanceTab(unitEditors));
+        dialog.add(tabs, BorderLayout.CENTER);
+
+        JButton applyButton = new JButton("Apply Changes");
+        applyButton.addActionListener(e -> {
+            for (UnitBalanceEditor editor : unitEditors) {
+                editor.applyTo(getUnitBalance(editor.getType()));
+            }
+            onUnitBalanceUpdated("Developer unit tuning applied.");
+        });
+
+        JButton resetButton = new JButton("Reset to Defaults");
+        resetButton.addActionListener(e -> {
+            for (UnitBalanceEditor editor : unitEditors) {
+                UnitBalance defaults = defaultUnitBalances.get(editor.getType());
+                if (defaults != null) {
+                    editor.loadFrom(defaults);
+                    editor.applyTo(getUnitBalance(editor.getType()));
+                }
+            }
+            onUnitBalanceUpdated("Unit stats reset to defaults.");
+        });
+
+        JButton closeButton = new JButton("Close");
+        closeButton.addActionListener(e -> dialog.dispose());
+
+        JPanel footer = new JPanel(new java.awt.FlowLayout(java.awt.FlowLayout.RIGHT, 10, 8));
+        footer.setBorder(javax.swing.BorderFactory.createEmptyBorder(8, 12, 12, 12));
+        footer.add(resetButton);
+        footer.add(applyButton);
+        footer.add(closeButton);
+        dialog.add(footer, BorderLayout.SOUTH);
+
+        dialog.addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosed(WindowEvent e) {
+                battlefieldPanel.requestFocusInWindow();
+            }
+
+            @Override
+            public void windowClosing(WindowEvent e) {
+                battlefieldPanel.requestFocusInWindow();
+            }
+        });
+
+        dialog.pack();
+        if (dialog.getWidth() < 560 || dialog.getHeight() < 520) {
+            dialog.setSize(Math.max(560, dialog.getWidth()), Math.max(520, dialog.getHeight()));
+        }
+        dialog.setLocationRelativeTo(this);
+        dialog.setVisible(true);
+    }
+
+    private JScrollPane createUnitBalanceTab(List<UnitBalanceEditor> editors) {
+        JPanel panel = new JPanel();
+        panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
+        panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(10, 12, 10, 12));
+
+        for (UnitType type : UnitType.values()) {
+            UnitBalanceEditor editor = new UnitBalanceEditor(type);
+            editor.loadFrom(getUnitBalance(type));
+            editors.add(editor);
+            panel.add(editor.getPanel());
+            panel.add(javax.swing.Box.createVerticalStrut(8));
+        }
+        panel.add(javax.swing.Box.createVerticalGlue());
+
+        JScrollPane scrollPane = new JScrollPane(panel);
+        scrollPane.setBorder(javax.swing.BorderFactory.createEmptyBorder());
+        scrollPane.getVerticalScrollBar().setUnitIncrement(16);
+        return scrollPane;
+    }
+
+    private void onUnitBalanceUpdated(String message) {
+        refreshUnitButtons();
+        clampExistingUnitsToBalance();
+        lastActionMessage = message;
+        refreshHud();
+        battlefieldPanel.repaint();
+    }
+
+    private void clampExistingUnitsToBalance() {
+        for (UnitInstance unit : playerUnits) {
+            unit.clampHealthToBalance();
+        }
+        for (UnitInstance unit : enemyUnits) {
+            unit.clampHealthToBalance();
+        }
+    }
+
+    private JPanel createKeybindSection(String title, String[][] entries) {
+        JPanel container = new JPanel(new BorderLayout());
+        container.setOpaque(false);
+        container.setAlignmentX(java.awt.Component.LEFT_ALIGNMENT);
+
+        JLabel titleLabel = new JLabel(title);
+        titleLabel.setFont(titleLabel.getFont().deriveFont(Font.BOLD, titleLabel.getFont().getSize() + 1f));
+        titleLabel.setBorder(javax.swing.BorderFactory.createEmptyBorder(4, 0, 4, 0));
+        container.add(titleLabel, BorderLayout.NORTH);
+
+        JPanel grid = new JPanel(new GridLayout(entries.length, 2, 12, 6));
+        grid.setOpaque(false);
+        for (String[] entry : entries) {
+            JLabel action = new JLabel(entry[0]);
+            action.setFont(action.getFont().deriveFont(Font.BOLD));
+            grid.add(action);
+            JLabel binding = new JLabel(entry[1]);
+            grid.add(binding);
+        }
+
+        container.add(grid, BorderLayout.CENTER);
+        return container;
     }
 
     private void restartToHeroSelection() {
@@ -505,6 +718,7 @@ public class HeroLineWarsGame extends JFrame {
         queueLabel.setText("Next Wave: None queued.");
         inventoryLabel.setText("Inventory: None");
         refreshPlayerSelector();
+        refreshControlsHint();
         updateHeroInterface();
         battlefieldPanel.repaint();
         showStartupFlow();
@@ -545,12 +759,23 @@ public class HeroLineWarsGame extends JFrame {
         getContentPane().setBackground(new Color(10, 14, 22));
         setLocationByPlatform(true);
 
+        initializeUnitBalances();
         buildInterface();
         pack();
         setLocationRelativeTo(null);
         setResizable(true);
 
         showStartupFlow();
+    }
+
+    private void initializeUnitBalances() {
+        unitBalances.clear();
+        defaultUnitBalances.clear();
+        for (UnitType type : UnitType.values()) {
+            UnitBalance defaults = UnitBalance.from(type);
+            defaultUnitBalances.put(type, defaults);
+            unitBalances.put(type, defaults.copy());
+        }
     }
 
     private void showStartupFlow() {
@@ -569,6 +794,7 @@ public class HeroLineWarsGame extends JFrame {
                     aiHero = createAiHero();
                     enemyIsHuman = false;
                     activeHeroIndex = 0;
+                    refreshControlsHint();
                     startBattle();
                 });
             } else {
@@ -587,6 +813,7 @@ public class HeroLineWarsGame extends JFrame {
                         aiHero = secondPlayerSelection;
                         enemyIsHuman = true;
                         activeHeroIndex = 0;
+                        refreshControlsHint();
                         startBattle();
                     });
                 });
@@ -664,6 +891,7 @@ public class HeroLineWarsGame extends JFrame {
         styleStatusLabel(economyLabel, Font.PLAIN, 15f, new Color(200, 215, 240));
         styleStatusLabel(queueLabel, Font.PLAIN, 14f, new Color(190, 210, 235));
         styleStatusLabel(inventoryLabel, Font.PLAIN, 14f, new Color(190, 210, 235));
+        styleStatusLabel(controlsHintLabel, Font.PLAIN, 13f, new Color(205, 220, 235));
         styleStatusLabel(actionLabel, Font.BOLD, 15f, new Color(240, 220, 160));
         applyCategoryIcon(baseLabel, IconLibrary.Category.PORTAL);
         applyCategoryIcon(heroLabel, IconLibrary.Category.HERO);
@@ -693,6 +921,8 @@ public class HeroLineWarsGame extends JFrame {
         JPanel infoFooter = new JPanel(new BorderLayout());
         infoFooter.setOpaque(false);
         infoFooter.add(inventoryLabel, BorderLayout.WEST);
+        controlsHintLabel.setHorizontalAlignment(SwingConstants.CENTER);
+        infoFooter.add(controlsHintLabel, BorderLayout.CENTER);
         actionLabel.setHorizontalAlignment(SwingConstants.RIGHT);
         actionLabel.setHorizontalTextPosition(SwingConstants.LEFT);
         infoFooter.add(actionLabel, BorderLayout.EAST);
@@ -712,6 +942,7 @@ public class HeroLineWarsGame extends JFrame {
         add(bottomPanel, BorderLayout.SOUTH);
 
         updateHeroInterface();
+        refreshControlsHint();
     }
 
     private void refreshPlayerSelector() {
@@ -728,6 +959,22 @@ public class HeroLineWarsGame extends JFrame {
             playerSelector.setSelectedIndex(targetIndex);
         }
         updateHeroInterface();
+    }
+
+    private void refreshControlsHint() {
+        final String bullet = " • ";
+        StringBuilder builder = new StringBuilder();
+        if (enemyIsHuman) {
+            builder.append("P1 Hero: WASD").append(bullet).append("P2 Hero: Arrow Keys").append(bullet);
+            builder.append("Camera: Q/E/R/F or Shift+Arrow Keys");
+        } else {
+            builder.append("Hero Movement: WASD").append(bullet);
+            builder.append("Camera: Arrow Keys or Q/E/R/F");
+        }
+        builder.append(bullet).append("Center: C");
+        builder.append(bullet).append("Zoom: +/- or Mouse Wheel");
+        builder.append(bullet).append("Pause: Esc/P");
+        controlsHintLabel.setText(builder.toString());
     }
 
     private Hero getActiveHero() {
@@ -777,11 +1024,13 @@ public class HeroLineWarsGame extends JFrame {
 
         JPanel unitButtonPanel = new JPanel(new GridLayout(1, 0, 4, 4));
         unitButtonPanel.setOpaque(false);
+        unitButtons.clear();
         for (UnitType type : UnitType.values()) {
-            JButton button = new JButton(String.format("%s (%dG, +%d income)",
-                    type.getDisplayName(), type.getCost(), type.getIncomeBonus()));
+            JButton button = new JButton(formatUnitButtonLabel(type));
+            button.setToolTipText(createUnitTooltip(type));
             button.addActionListener(e -> attemptSendUnit(type));
             stylePrimaryButton(button);
+            unitButtons.put(type, button);
             unitButtonPanel.add(button);
         }
         unitButtonPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(2, 0, 2, 0));
@@ -814,6 +1063,40 @@ public class HeroLineWarsGame extends JFrame {
         refreshPlayerSelector();
 
         return commandPanel;
+    }
+
+    private String formatUnitButtonLabel(UnitType type) {
+        UnitBalance balance = getUnitBalance(type);
+        return String.format("%s (%dG, +%d income)", type.getDisplayName(), balance.getCost(),
+                balance.getIncomeBonus());
+    }
+
+    private String createUnitTooltip(UnitType type) {
+        UnitBalance balance = getUnitBalance(type);
+        return String.format("<html>%s<br/>Cost: %dG &nbsp; Income: +%d<br/>Health: %d &nbsp; Damage: %d &nbsp; Range: %d</html>",
+                type.getDescription(), balance.getCost(), balance.getIncomeBonus(), balance.getHealth(),
+                balance.getDamage(), balance.getRange());
+    }
+
+    private void refreshUnitButtons() {
+        for (UnitType type : unitButtons.keySet()) {
+            JButton button = unitButtons.get(type);
+            if (button != null) {
+                button.setText(formatUnitButtonLabel(type));
+                button.setToolTipText(createUnitTooltip(type));
+            }
+        }
+    }
+
+    private UnitBalance getUnitBalance(UnitType type) {
+        UnitBalance balance = unitBalances.get(type);
+        if (balance == null) {
+            UnitBalance defaults = UnitBalance.from(type);
+            unitBalances.put(type, defaults);
+            defaultUnitBalances.putIfAbsent(type, defaults.copy());
+            return defaults;
+        }
+        return balance;
     }
 
     private void styleStatusLabel(JLabel label, int style, float size, Color color) {
@@ -998,6 +1281,7 @@ public class HeroLineWarsGame extends JFrame {
         modeLabel.setText(enemyIsHuman ? "Hero Line Wars - Local Versus" : "Hero Line Wars - Live Battle");
         playerTeam = new Team(enemyIsHuman ? "Player 1" : "Player", playerHero);
         enemyTeam = new Team(enemyIsHuman ? "Player 2" : "Enemy", aiHero);
+        refreshControlsHint();
         playerPortalBreaches = 0;
         enemyPortalBreaches = 0;
         playerKills = 0;
@@ -1968,6 +2252,8 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private void centerCameraOn(double worldX, double worldY) {
+        double viewWidth = getCurrentViewWidthInWorldUnits();
+        double viewHeight = getCurrentViewHeightInWorldUnits();
         int viewWidth = getCurrentViewWidth();
         int viewHeight = getCurrentViewHeight();
         double targetX = worldX - viewWidth / 2.0;
@@ -1978,6 +2264,7 @@ public class HeroLineWarsGame extends JFrame {
     }
 
     private void resetCamera() {
+        cameraZoom = clamp(1.0, CAMERA_MIN_ZOOM, CAMERA_MAX_ZOOM);
         centerCameraOn(heroX + HERO_WIDTH / 2.0, heroY + HERO_WIDTH / 2.0);
     }
 
@@ -2007,6 +2294,56 @@ public class HeroLineWarsGame extends JFrame {
         return Math.max(1, height);
     }
 
+    private double getCurrentViewWidthInWorldUnits() {
+        return getCurrentViewWidth() / cameraZoom;
+    }
+
+    private double getCurrentViewHeightInWorldUnits() {
+        return getCurrentViewHeight() / cameraZoom;
+    }
+
+    private double getMaxCameraX() {
+        return Math.max(0, WORLD_WIDTH - getCurrentViewWidthInWorldUnits());
+    }
+
+    private double getMaxCameraY() {
+        return Math.max(0, WORLD_HEIGHT - getCurrentViewHeightInWorldUnits());
+    }
+
+    private double screenToWorldX(double screenX) {
+        return cameraX + screenX / cameraZoom;
+    }
+
+    private double screenToWorldY(double screenY) {
+        return cameraY + screenY / cameraZoom;
+    }
+
+    private double getCameraCenterX() {
+        return cameraX + getCurrentViewWidthInWorldUnits() / 2.0;
+    }
+
+    private double getCameraCenterY() {
+        return cameraY + getCurrentViewHeightInWorldUnits() / 2.0;
+    }
+
+    private void adjustCameraZoom(double delta) {
+        adjustCameraZoomAtPoint(delta, getCameraCenterX(), getCameraCenterY());
+    }
+
+    private void adjustCameraZoomAtPoint(double delta, double pivotWorldX, double pivotWorldY) {
+        setCameraZoom(cameraZoom + delta, pivotWorldX, pivotWorldY);
+    }
+
+    private void setCameraZoom(double targetZoom, double pivotWorldX, double pivotWorldY) {
+        double clampedZoom = clamp(targetZoom, CAMERA_MIN_ZOOM, CAMERA_MAX_ZOOM);
+        cameraZoom = clampedZoom;
+        double viewWidth = getCurrentViewWidthInWorldUnits();
+        double viewHeight = getCurrentViewHeightInWorldUnits();
+        double desiredX = pivotWorldX - viewWidth / 2.0;
+        double desiredY = pivotWorldY - viewHeight / 2.0;
+        cameraX = clamp(desiredX, 0, getMaxCameraX());
+        cameraY = clamp(desiredY, 0, getMaxCameraY());
+        battlefieldPanel.repaint();
     private double getMaxCameraX() {
         return Math.max(0, WORLD_WIDTH - getCurrentViewWidth());
     }
@@ -2169,6 +2506,19 @@ public class HeroLineWarsGame extends JFrame {
             };
             addMouseListener(adapter);
             addMouseMotionListener(adapter);
+            addMouseWheelListener(e -> {
+                double rotation = e.getPreciseWheelRotation();
+                if (rotation == 0) {
+                    return;
+                }
+                double pivotX = screenToWorldX(e.getX());
+                double pivotY = screenToWorldY(e.getY());
+                if (rotation < 0) {
+                    adjustCameraZoomAtPoint(CAMERA_ZOOM_STEP, pivotX, pivotY);
+                } else {
+                    adjustCameraZoomAtPoint(-CAMERA_ZOOM_STEP, pivotX, pivotY);
+                }
+            });
             setupKeyBindings();
             addComponentListener(new ComponentAdapter() {
                 @Override
@@ -2235,6 +2585,24 @@ public class HeroLineWarsGame extends JFrame {
             javax.swing.KeyStroke panUp = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_R, 0);
             javax.swing.KeyStroke panDown = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_F, 0);
             javax.swing.KeyStroke centerKey = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_C, 0);
+            javax.swing.KeyStroke panLeftShift = javax.swing.KeyStroke
+                    .getKeyStroke(java.awt.event.KeyEvent.VK_LEFT, InputEvent.SHIFT_DOWN_MASK);
+            javax.swing.KeyStroke panRightShift = javax.swing.KeyStroke
+                    .getKeyStroke(java.awt.event.KeyEvent.VK_RIGHT, InputEvent.SHIFT_DOWN_MASK);
+            javax.swing.KeyStroke panUpShift = javax.swing.KeyStroke
+                    .getKeyStroke(java.awt.event.KeyEvent.VK_UP, InputEvent.SHIFT_DOWN_MASK);
+            javax.swing.KeyStroke panDownShift = javax.swing.KeyStroke
+                    .getKeyStroke(java.awt.event.KeyEvent.VK_DOWN, InputEvent.SHIFT_DOWN_MASK);
+            javax.swing.KeyStroke zoomIn = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_EQUALS, 0);
+            javax.swing.KeyStroke zoomInShift = javax.swing.KeyStroke
+                    .getKeyStroke(java.awt.event.KeyEvent.VK_EQUALS, InputEvent.SHIFT_DOWN_MASK);
+            javax.swing.KeyStroke zoomInNumpad = javax.swing.KeyStroke
+                    .getKeyStroke(java.awt.event.KeyEvent.VK_ADD, 0);
+            javax.swing.KeyStroke zoomOut = javax.swing.KeyStroke.getKeyStroke(java.awt.event.KeyEvent.VK_MINUS, 0);
+            javax.swing.KeyStroke zoomOutShift = javax.swing.KeyStroke
+                    .getKeyStroke(java.awt.event.KeyEvent.VK_MINUS, InputEvent.SHIFT_DOWN_MASK);
+            javax.swing.KeyStroke zoomOutNumpad = javax.swing.KeyStroke
+                    .getKeyStroke(java.awt.event.KeyEvent.VK_SUBTRACT, 0);
 
             inputMap.put(left, "moveLeft");
             inputMap.put(right, "moveRight");
@@ -2250,6 +2618,17 @@ public class HeroLineWarsGame extends JFrame {
             inputMap.put(panRight, "cameraRight");
             inputMap.put(panUp, "cameraUp");
             inputMap.put(panDown, "cameraDown");
+            inputMap.put(panLeftShift, "cameraLeft");
+            inputMap.put(panRightShift, "cameraRight");
+            inputMap.put(panUpShift, "cameraUp");
+            inputMap.put(panDownShift, "cameraDown");
+            inputMap.put(centerKey, "cameraCenter");
+            inputMap.put(zoomIn, "cameraZoomIn");
+            inputMap.put(zoomInShift, "cameraZoomIn");
+            inputMap.put(zoomInNumpad, "cameraZoomIn");
+            inputMap.put(zoomOut, "cameraZoomOut");
+            inputMap.put(zoomOutShift, "cameraZoomOut");
+            inputMap.put(zoomOutNumpad, "cameraZoomOut");
             inputMap.put(centerKey, "cameraCenter");
 
             actionMap.put("moveLeft", new javax.swing.AbstractAction() {
@@ -2281,6 +2660,8 @@ public class HeroLineWarsGame extends JFrame {
                 public void actionPerformed(java.awt.event.ActionEvent e) {
                     if (enemyIsHuman) {
                         adjustEnemyTargetX(-60);
+                    } else {
+                        panCamera(-CAMERA_PAN_DELTA, 0);
                     }
                 }
             });
@@ -2289,6 +2670,8 @@ public class HeroLineWarsGame extends JFrame {
                 public void actionPerformed(java.awt.event.ActionEvent e) {
                     if (enemyIsHuman) {
                         adjustEnemyTargetX(60);
+                    } else {
+                        panCamera(CAMERA_PAN_DELTA, 0);
                     }
                 }
             });
@@ -2297,6 +2680,8 @@ public class HeroLineWarsGame extends JFrame {
                 public void actionPerformed(java.awt.event.ActionEvent e) {
                     if (enemyIsHuman) {
                         adjustEnemyTargetY(-60);
+                    } else {
+                        panCamera(0, -CAMERA_PAN_DELTA);
                     }
                 }
             });
@@ -2305,6 +2690,8 @@ public class HeroLineWarsGame extends JFrame {
                 public void actionPerformed(java.awt.event.ActionEvent e) {
                     if (enemyIsHuman) {
                         adjustEnemyTargetY(60);
+                    } else {
+                        panCamera(0, CAMERA_PAN_DELTA);
                     }
                 }
             });
@@ -2338,6 +2725,18 @@ public class HeroLineWarsGame extends JFrame {
                     centerCameraOn(heroX + HERO_WIDTH / 2.0, heroY + HERO_WIDTH / 2.0);
                 }
             });
+            actionMap.put("cameraZoomIn", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    adjustCameraZoom(CAMERA_ZOOM_STEP);
+                }
+            });
+            actionMap.put("cameraZoomOut", new javax.swing.AbstractAction() {
+                @Override
+                public void actionPerformed(java.awt.event.ActionEvent e) {
+                    adjustCameraZoom(-CAMERA_ZOOM_STEP);
+                }
+            });
             actionMap.put("pause", new javax.swing.AbstractAction() {
                 @Override
                 public void actionPerformed(java.awt.event.ActionEvent e) {
@@ -2360,6 +2759,11 @@ public class HeroLineWarsGame extends JFrame {
             if (viewHeight <= 0) {
                 viewHeight = getPreferredSize().height;
             }
+            }
+            int viewHeight = getHeight();
+            if (viewHeight <= 0) {
+                viewHeight = getPreferredSize().height;
+            }
             GradientPaint background = new GradientPaint(0, 0, new Color(16, 28, 32), 0, viewHeight,
                     new Color(6, 14, 18));
             g2.setPaint(background);
@@ -2367,6 +2771,7 @@ public class HeroLineWarsGame extends JFrame {
             g2.setPaint(null);
 
             AffineTransform originalTransform = g2.getTransform();
+            g2.scale(cameraZoom, cameraZoom);
             g2.translate(-cameraX, -cameraY);
 
             int width = WORLD_WIDTH;
@@ -2688,7 +3093,7 @@ public class HeroLineWarsGame extends JFrame {
                 int shieldSize = UNIT_SIZE + 12;
                 g2.drawOval(drawX - 6, drawY - 6, shieldSize, shieldSize);
             }
-            double ratio = Math.min(1.0, Math.max(0, unit.health) / (double) unit.type.getHealth());
+            double ratio = Math.min(1.0, Math.max(0, unit.health) / (double) unit.getMaxHealth());
             g2.setColor(new Color(45, 45, 45));
             g2.fillRoundRect(drawX, drawY - 8, UNIT_SIZE, 6, 6, 6);
             g2.setColor(new Color(80, 210, 100));
@@ -2807,14 +3212,15 @@ public class HeroLineWarsGame extends JFrame {
         if (hero == null || team == null) {
             return;
         }
-        if (!hero.spendGold(type.getCost())) {
+        UnitBalance balance = getUnitBalance(type);
+        if (!hero.spendGold(balance.getCost())) {
             lastActionMessage = String.format("%s lacks the gold to send a %s.",
                     team.getName(), type.getDisplayName());
             refreshHud();
             battlefieldPanel.repaint();
             return;
         }
-        hero.addIncome(type.getIncomeBonus());
+        hero.addIncome(balance.getIncomeBonus());
         team.queueUnit(type);
         lastActionMessage = String.format("%s queued a %s for the next wave.",
                 team.getName(), type.getDisplayName());
@@ -2828,7 +3234,8 @@ public class HeroLineWarsGame extends JFrame {
         }
         java.util.List<UnitType> affordable = new java.util.ArrayList<>();
         for (UnitType type : UnitType.values()) {
-            if (aiHero.getGold() >= type.getCost()) {
+            UnitBalance balance = getUnitBalance(type);
+            if (aiHero.getGold() >= balance.getCost()) {
                 affordable.add(type);
             }
         }
@@ -2836,8 +3243,9 @@ public class HeroLineWarsGame extends JFrame {
             return;
         }
         UnitType choice = affordable.get(random.nextInt(affordable.size()));
-        aiHero.spendGold(choice.getCost());
-        aiHero.addIncome(choice.getIncomeBonus());
+        UnitBalance choiceBalance = getUnitBalance(choice);
+        aiHero.spendGold(choiceBalance.getCost());
+        aiHero.addIncome(choiceBalance.getIncomeBonus());
         enemyTeam.queueUnit(choice);
         battlefieldPanel.repaint();
     }
@@ -2912,6 +3320,7 @@ public class HeroLineWarsGame extends JFrame {
         }
         double verticalSpan = Math.max(0, bottomLimit - topLimit);
         double spawnY = topLimit + (verticalSpan <= 0 ? 0 : random.nextDouble() * verticalSpan);
+        return new UnitInstance(type, getUnitBalance(type), spawnX, spawnY, topLimit, bottomLimit, fromPlayer, laneIndex);
         return new UnitInstance(type, spawnX, spawnY, topLimit, bottomLimit, fromPlayer, laneIndex);
     }
 
@@ -3066,6 +3475,169 @@ public class HeroLineWarsGame extends JFrame {
             if (unit.isDead()) {
                 iterator.remove();
             }
+        }
+    }
+
+    private static final class UnitBalance {
+        private int cost;
+        private int health;
+        private int damage;
+        private int incomeBonus;
+        private int range;
+
+        private UnitBalance(int cost, int health, int damage, int incomeBonus, int range) {
+            setCost(cost);
+            setHealth(health);
+            setDamage(damage);
+            setIncomeBonus(incomeBonus);
+            setRange(range);
+        }
+
+        static UnitBalance from(UnitType type) {
+            return new UnitBalance(type.getCost(), type.getHealth(), type.getDamage(), type.getIncomeBonus(),
+                    type.getRange());
+        }
+
+        UnitBalance copy() {
+            return new UnitBalance(cost, health, damage, incomeBonus, range);
+        }
+
+        void apply(UnitBalance other) {
+            setCost(other.cost);
+            setHealth(other.health);
+            setDamage(other.damage);
+            setIncomeBonus(other.incomeBonus);
+            setRange(other.range);
+        }
+
+        int getCost() {
+            return cost;
+        }
+
+        void setCost(int value) {
+            this.cost = Math.max(0, value);
+        }
+
+        int getHealth() {
+            return health;
+        }
+
+        void setHealth(int value) {
+            this.health = Math.max(1, value);
+        }
+
+        int getDamage() {
+            return damage;
+        }
+
+        void setDamage(int value) {
+            this.damage = Math.max(1, value);
+        }
+
+        int getIncomeBonus() {
+            return incomeBonus;
+        }
+
+        void setIncomeBonus(int value) {
+            this.incomeBonus = Math.max(0, value);
+        }
+
+        int getRange() {
+            return range;
+        }
+
+        void setRange(int value) {
+            this.range = Math.max(UNIT_SIZE, value);
+        }
+    }
+
+    private static final class UnitBalanceEditor {
+        private final UnitType type;
+        private final JPanel panel;
+        private final JSpinner costSpinner;
+        private final JSpinner healthSpinner;
+        private final JSpinner damageSpinner;
+        private final JSpinner incomeSpinner;
+        private final JSpinner rangeSpinner;
+
+        UnitBalanceEditor(UnitType type) {
+            this.type = type;
+            this.panel = new JPanel(new BorderLayout(8, 6));
+            panel.setOpaque(false);
+            panel.setBorder(javax.swing.BorderFactory.createCompoundBorder(
+                    javax.swing.BorderFactory.createLineBorder(new Color(45, 62, 88)),
+                    javax.swing.BorderFactory.createEmptyBorder(8, 10, 8, 10)));
+            panel.setAlignmentX(Component.LEFT_ALIGNMENT);
+
+            JLabel title = new JLabel(type.getDisplayName());
+            title.setFont(title.getFont().deriveFont(Font.BOLD, 14f));
+            panel.add(title, BorderLayout.NORTH);
+
+            JPanel center = new JPanel();
+            center.setOpaque(false);
+            center.setLayout(new BoxLayout(center, BoxLayout.Y_AXIS));
+
+            JLabel description = new JLabel(type.getDescription());
+            description.setForeground(new Color(200, 210, 230));
+            description.setBorder(javax.swing.BorderFactory.createEmptyBorder(0, 0, 6, 0));
+            center.add(description);
+
+            java.awt.FlowLayout flow = new java.awt.FlowLayout(java.awt.FlowLayout.LEFT, 10, 4);
+            JPanel row = new JPanel(flow);
+            row.setOpaque(false);
+
+            costSpinner = createSpinner(0, 999, 1);
+            healthSpinner = createSpinner(1, 1500, 1);
+            damageSpinner = createSpinner(1, 600, 1);
+            incomeSpinner = createSpinner(0, 250, 1);
+            rangeSpinner = createSpinner(UNIT_SIZE, 480, 1);
+
+            row.add(makeLabeledField("Cost", costSpinner));
+            row.add(makeLabeledField("Health", healthSpinner));
+            row.add(makeLabeledField("Damage", damageSpinner));
+            row.add(makeLabeledField("Income", incomeSpinner));
+            row.add(makeLabeledField("Range", rangeSpinner));
+
+            center.add(row);
+            panel.add(center, BorderLayout.CENTER);
+        }
+
+        private static JPanel makeLabeledField(String label, JSpinner spinner) {
+            spinner.setPreferredSize(new Dimension(70, spinner.getPreferredSize().height));
+            JPanel container = new JPanel(new BorderLayout(4, 0));
+            container.setOpaque(false);
+            JLabel name = new JLabel(label + ":");
+            container.add(name, BorderLayout.WEST);
+            container.add(spinner, BorderLayout.CENTER);
+            return container;
+        }
+
+        private static JSpinner createSpinner(int min, int max, int step) {
+            return new JSpinner(new SpinnerNumberModel(min, min, max, Math.max(1, step)));
+        }
+
+        void loadFrom(UnitBalance balance) {
+            costSpinner.setValue(balance.getCost());
+            healthSpinner.setValue(balance.getHealth());
+            damageSpinner.setValue(balance.getDamage());
+            incomeSpinner.setValue(balance.getIncomeBonus());
+            rangeSpinner.setValue(balance.getRange());
+        }
+
+        void applyTo(UnitBalance balance) {
+            balance.setCost((Integer) costSpinner.getValue());
+            balance.setHealth((Integer) healthSpinner.getValue());
+            balance.setDamage((Integer) damageSpinner.getValue());
+            balance.setIncomeBonus((Integer) incomeSpinner.getValue());
+            balance.setRange((Integer) rangeSpinner.getValue());
+        }
+
+        JPanel getPanel() {
+            return panel;
+        }
+
+        UnitType getType() {
+            return type;
         }
     }
 
@@ -3257,6 +3829,7 @@ public class HeroLineWarsGame extends JFrame {
 
     private class UnitInstance {
         private final UnitType type;
+        private final UnitBalance balance;
         private double x;
         private int health;
         private int attackCooldown;
@@ -3271,12 +3844,13 @@ public class HeroLineWarsGame extends JFrame {
         private double bottomLimit;
         private double laneCenter;
 
-        UnitInstance(UnitType type, double x, double y, double topLimit, double bottomLimit, boolean fromPlayer,
-                int laneIndex) {
+        UnitInstance(UnitType type, UnitBalance balance, double x, double y, double topLimit, double bottomLimit,
+                boolean fromPlayer, int laneIndex) {
             this.type = type;
+            this.balance = balance;
             this.x = x;
             this.y = y;
-            this.health = type.getHealth();
+            this.health = balance.getHealth();
             this.attackCooldown = 0;
             this.fromPlayer = fromPlayer;
             this.laneIndex = laneIndex;
@@ -3325,14 +3899,14 @@ public class HeroLineWarsGame extends JFrame {
 
         void tryAttack(UnitInstance target) {
             if (attackCooldown <= 0 && isInRange(target)) {
-                target.takeDamage(type.getDamage());
+                target.takeDamage(balance.getDamage());
                 attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
             }
         }
 
         boolean tryAttackHero(Hero hero) {
             if (attackCooldown <= 0) {
-                int damage = Math.max(1, type.getDamage() - hero.getDefense());
+                int damage = Math.max(1, balance.getDamage() - hero.getDefense());
                 boolean defeated = hero.takeDamage(damage);
                 attackCooldown = UNIT_ATTACK_COOLDOWN_TICKS;
                 return defeated;
@@ -3375,7 +3949,7 @@ public class HeroLineWarsGame extends JFrame {
         }
 
         int getRange() {
-            return type.getRange();
+            return balance.getRange();
         }
 
         double getCenterX() {
@@ -3400,6 +3974,14 @@ public class HeroLineWarsGame extends JFrame {
 
         boolean hasSpawnShield() {
             return spawnShield > 0;
+        }
+
+        int getMaxHealth() {
+            return balance.getHealth();
+        }
+
+        void clampHealthToBalance() {
+            health = Math.min(health, getMaxHealth());
         }
     }
 }
