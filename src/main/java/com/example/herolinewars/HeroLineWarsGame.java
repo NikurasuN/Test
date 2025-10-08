@@ -1,5 +1,6 @@
 package com.example.herolinewars;
 
+import javax.swing.AbstractButton;
 import javax.swing.JButton;
 import javax.swing.JDialog;
 import javax.swing.JFrame;
@@ -189,6 +190,10 @@ public class HeroLineWarsGame extends JFrame {
         for (Item item : SHOP_ITEMS) {
             JButton button = new JButton(formatItemLabel(item));
             button.setToolTipText(item.getDescription());
+            button.setIcon(IconLibrary.createItemGlyph(item));
+            button.setHorizontalAlignment(SwingConstants.LEFT);
+            button.setHorizontalTextPosition(SwingConstants.RIGHT);
+            button.setIconTextGap(10);
             button.addActionListener(e -> handleItemPurchase(item, goldLabel, messageLabel, targetHero));
             itemsPanel.add(button);
         }
@@ -237,7 +242,11 @@ public class HeroLineWarsGame extends JFrame {
                 slotLabel.append(String.format(" (%d/%d)", targetHero.getEquippedCount(Item.EquipmentSlot.RING),
                         targetHero.getMaxRings()));
             }
-            equipmentGrid.add(new JLabel(slotLabel + ":"));
+            JLabel slotName = new JLabel(slotLabel + ":");
+            slotName.setIcon(IconLibrary.createItemSlotGlyph(slot));
+            slotName.setIconTextGap(6);
+            slotName.setHorizontalTextPosition(SwingConstants.RIGHT);
+            equipmentGrid.add(slotName);
             java.util.List<Item> slotItems = equipped.get(slot);
             String text;
             if (slotItems == null || slotItems.isEmpty()) {
@@ -646,6 +655,14 @@ public class HeroLineWarsGame extends JFrame {
         styleStatusLabel(queueLabel, Font.PLAIN, 14f, new Color(190, 210, 235));
         styleStatusLabel(inventoryLabel, Font.PLAIN, 14f, new Color(190, 210, 235));
         styleStatusLabel(actionLabel, Font.BOLD, 15f, new Color(240, 220, 160));
+        applyCategoryIcon(baseLabel, IconLibrary.Category.PORTAL);
+        applyCategoryIcon(heroLabel, IconLibrary.Category.HERO);
+        applyCategoryIcon(aiLabel, IconLibrary.Category.ENEMY);
+        applyCategoryIcon(killsLabel, IconLibrary.Category.KILLS);
+        applyCategoryIcon(economyLabel, IconLibrary.Category.ECONOMY);
+        applyCategoryIcon(queueLabel, IconLibrary.Category.QUEUE);
+        applyCategoryIcon(inventoryLabel, IconLibrary.Category.INVENTORY);
+        applyCategoryIcon(actionLabel, IconLibrary.Category.ACTION);
 
         JPanel topPanel = new JPanel(new BorderLayout());
         topPanel.setBorder(javax.swing.BorderFactory.createEmptyBorder(12, 18, 12, 18));
@@ -667,6 +684,7 @@ public class HeroLineWarsGame extends JFrame {
         infoFooter.setOpaque(false);
         infoFooter.add(inventoryLabel, BorderLayout.WEST);
         actionLabel.setHorizontalAlignment(SwingConstants.RIGHT);
+        actionLabel.setHorizontalTextPosition(SwingConstants.LEFT);
         infoFooter.add(actionLabel, BorderLayout.EAST);
         topPanel.add(infoFooter, BorderLayout.SOUTH);
 
@@ -773,6 +791,9 @@ public class HeroLineWarsGame extends JFrame {
         styleSecondaryButton(inventoryButton);
         styleSecondaryButton(shopButton);
         styleSecondaryButton(pauseButton);
+        applyCategoryIcon(inventoryButton, IconLibrary.Category.INVENTORY);
+        applyCategoryIcon(shopButton, IconLibrary.Category.SHOP);
+        applyCategoryIcon(pauseButton, IconLibrary.Category.PAUSE);
         utilityPanel.add(inventoryButton);
         utilityPanel.add(shopButton);
         utilityPanel.add(pauseButton);
@@ -811,6 +832,26 @@ public class HeroLineWarsGame extends JFrame {
         button.setFont(button.getFont().deriveFont(12.5f));
     }
 
+    private void applyCategoryIcon(JLabel label, IconLibrary.Category category) {
+        label.setIcon(IconLibrary.createCategoryGlyph(category));
+        label.setIconTextGap(8);
+        label.setHorizontalTextPosition(SwingConstants.RIGHT);
+    }
+
+    private void applyCategoryIcon(AbstractButton button, IconLibrary.Category category) {
+        button.setIcon(IconLibrary.createCategoryGlyph(category));
+        button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setHorizontalTextPosition(SwingConstants.RIGHT);
+        button.setIconTextGap(6);
+    }
+
+    private void applyAttributeIcon(JButton button, Hero.PrimaryAttribute attribute) {
+        button.setIcon(IconLibrary.createAttributeGlyph(attribute));
+        button.setHorizontalAlignment(SwingConstants.LEFT);
+        button.setHorizontalTextPosition(SwingConstants.RIGHT);
+        button.setIconTextGap(6);
+    }
+
     private JPanel createHeroInterfacePanel() {
         JPanel panel = new JPanel(new GridLayout(0, 1, 3, 3));
         panel.setBorder(javax.swing.BorderFactory.createEmptyBorder(6, 10, 6, 10));
@@ -825,6 +866,12 @@ public class HeroLineWarsGame extends JFrame {
         heroProgressLabel.setForeground(new Color(200, 220, 255));
         heroResourceLabel.setForeground(new Color(200, 220, 255));
         upgradeSummaryLabel.setForeground(new Color(210, 220, 255));
+        applyCategoryIcon(heroSummaryLabel, IconLibrary.Category.HERO_SUMMARY);
+        applyCategoryIcon(heroAttributesLabel, IconLibrary.Category.ATTRIBUTES);
+        applyCategoryIcon(heroCombatLabel, IconLibrary.Category.COMBAT);
+        applyCategoryIcon(heroProgressLabel, IconLibrary.Category.PROGRESS);
+        applyCategoryIcon(heroResourceLabel, IconLibrary.Category.RESOURCES);
+        applyCategoryIcon(upgradeSummaryLabel, IconLibrary.Category.ATTRIBUTES);
 
         configureUpgradeButton(upgradeStrengthButton, "Strength", Hero.PrimaryAttribute.STRENGTH);
         configureUpgradeButton(upgradeDexterityButton, "Dexterity", Hero.PrimaryAttribute.DEXTERITY);
@@ -858,6 +905,7 @@ public class HeroLineWarsGame extends JFrame {
         button.setFont(button.getFont().deriveFont(12.5f));
         button.setToolTipText(String.format("Spend %d gold to increase %s by 1.", ATTRIBUTE_UPGRADE_COST,
                 attributeName.toLowerCase()));
+        applyAttributeIcon(button, attribute);
         button.addActionListener(e -> attemptAttributeUpgrade(attribute, attributeName));
     }
 
@@ -1478,10 +1526,10 @@ public class HeroLineWarsGame extends JFrame {
         Hero hero = getHeroForIndex(activeHeroIndex);
         if (hero == null) {
             heroSummaryLabel.setText("Hero interface locked until a hero is chosen.");
-            heroAttributesLabel.setText("");
-            heroCombatLabel.setText("");
-            heroProgressLabel.setText("");
-            heroResourceLabel.setText("");
+            heroAttributesLabel.setText("Attributes: --");
+            heroCombatLabel.setText("Combat data unavailable.");
+            heroProgressLabel.setText("Progress: --");
+            heroResourceLabel.setText("Vitals: --");
             updateUpgradeButtons();
             return;
         }
