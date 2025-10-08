@@ -171,13 +171,55 @@ if not defined CMAKE_GENERATOR_NAME (
     )
 )
 :detect_generator_done
+if defined CMAKE_GENERATOR_NAME (
+    call :detect_vs_availability
+    if not defined VS_AVAILABLE (
+        set "CMAKE_GENERATOR_NAME="
+    )
+)
 if not defined CMAKE_GENERATOR_NAME (
     echo Unable to determine a Visual Studio generator automatically. >&2
     echo Falling back to CMake default generator. Set CMAKE_GENERATOR to override. >&2
 )
+set "VS_AVAILABLE="
 goto :eof
 
-:detect_generator_with_vswhere
+:detect_vs_availability
+set "VS_AVAILABLE="
+for %%v in (VSINSTALLDIR VCINSTALLDIR) do (
+    if defined %%v (
+        for %%p in ("%%%v%%") do (
+            if exist "%%~p\VC\Auxiliary\Build\vcvarsall.bat" set "VS_AVAILABLE=1"
+            if not defined VS_AVAILABLE if exist "%%~p\" set "VS_AVAILABLE=1"
+        )
+    )
+)
+if defined VS_AVAILABLE goto :eof
+for %%v in (170 160 150 140) do (
+    for %%p in ("%%VS%%vCOMNTOOLS%%") do (
+        if not "%%~p"=="" if exist "%%~p\" set "VS_AVAILABLE=1"
+    )
+)
+if defined VS_AVAILABLE goto :eof
+for %%t in (devenv.exe msbuild.exe cl.exe) do (
+    where %%t >nul 2>nul
+    if not errorlevel 1 (
+        set "VS_AVAILABLE=1"
+        goto :eof
+    )
+)
+call :locate_vswhere_path
+if defined VSWHERE_PATH (
+    for /f "delims=" %%p in ('"%VSWHERE_PATH%" -latest -products * -requires Microsoft.Component.MSBuild -property installationPath 2^>nul') do (
+        if exist "%%~p\" (
+            set "VS_AVAILABLE=1"
+            goto :eof
+        )
+    )
+)
+goto :eof
+
+:locate_vswhere_path
 set "VSWHERE_PATH="
 if defined ProgramFiles(x86) (
     if exist "%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" (
@@ -198,6 +240,10 @@ if not defined VSWHERE_PATH (
         )
     )
 )
+goto :eof
+
+:detect_generator_with_vswhere
+call :locate_vswhere_path
 if not defined VSWHERE_PATH goto :eof
 
 set "VSWHERE_ARGS=-latest -products * -requires Microsoft.Component.MSBuild -property installationVersion"
@@ -232,16 +278,8 @@ rem the current environment actually has a Visual Studio toolchain available.
 rem This prevents us from selecting a generator that CMake advertises but is
 rem not installed locally (which would otherwise cause the configuration step
 rem to fail with a "could not find any instance of Visual Studio" error).
-set "_VS_ENV_PRESENT="
-for %%v in (VSINSTALLDIR VCINSTALLDIR) do (
-    if defined %%v set "_VS_ENV_PRESENT=1"
-)
-if not defined _VS_ENV_PRESENT (
-    for %%v in (170 160 150 140) do (
-        if defined VS%%vCOMNTOOLS set "_VS_ENV_PRESENT=1"
-    )
-)
-if not defined _VS_ENV_PRESENT goto :eof
+call :detect_vs_availability
+if not defined VS_AVAILABLE goto :eof
 
 for %%g in ("Visual Studio 17 2022" "Visual Studio 16 2019") do (
     if not defined CMAKE_GENERATOR_NAME (
@@ -251,7 +289,7 @@ for %%g in ("Visual Studio 17 2022" "Visual Studio 16 2019") do (
         )
     )
 )
-set "_VS_ENV_PRESENT="
+set "VS_AVAILABLE="
 goto :eof
 
 :locate_executable
