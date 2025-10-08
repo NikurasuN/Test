@@ -153,6 +153,7 @@ public class HeroLineWarsGame extends JFrame {
     private String lastActionMessage = "Ready to launch units down the lane.";
     private final java.util.List<UnitInstance> playerUnits = new java.util.ArrayList<>();
     private final java.util.List<UnitInstance> enemyUnits = new java.util.ArrayList<>();
+    private final java.util.List<Projectile> projectiles = new java.util.ArrayList<>();
     private boolean paused;
     private int nextPlayerLaneIndex;
     private int nextEnemyLaneIndex;
@@ -450,6 +451,7 @@ public class HeroLineWarsGame extends JFrame {
         enemyBaseAttackCooldown = 0;
         playerUnits.clear();
         enemyUnits.clear();
+        projectiles.clear();
         playerTeam = null;
         enemyTeam = null;
         nextPlayerLaneIndex = 0;
@@ -942,6 +944,7 @@ public class HeroLineWarsGame extends JFrame {
         waveCountdown = WAVE_INTERVAL_TICKS;
         playerUnits.clear();
         enemyUnits.clear();
+        projectiles.clear();
         nextPlayerLaneIndex = 0;
         nextEnemyLaneIndex = 0;
         heroLaneIndex = PLAYER_DEFAULT_LANE;
@@ -1091,7 +1094,8 @@ public class HeroLineWarsGame extends JFrame {
             enemyBaseAttackCooldown--;
         }
 
-        handleHeroCombat();
+        handleHeroAttacks();
+        updateProjectiles();
         handleBasePressure();
         updateUnits();
         resolveHeroUnitCombat();
@@ -1100,32 +1104,228 @@ public class HeroLineWarsGame extends JFrame {
         battlefieldPanel.repaint();
     }
 
-    private void handleHeroCombat() {
-        if (!heroAlive || !enemyAlive) {
+    private void handleHeroAttacks() {
+        processHeroAttack(true);
+        processHeroAttack(false);
+    }
+
+    private void processHeroAttack(boolean fromPlayer) {
+        Hero attacker = fromPlayer ? playerHero : aiHero;
+        if (attacker == null) {
             return;
         }
-        double heroCenterX = heroX + HERO_WIDTH / 2.0;
-        double heroCenterY = heroY + HERO_WIDTH / 2.0;
-        double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
-        double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
-        double distance = distance(heroCenterX, heroCenterY, enemyCenterX, enemyCenterY);
-        boolean inHeroRange = distance <= playerHero.getAttackRangePixels();
-        boolean inEnemyRange = distance <= aiHero.getAttackRangePixels();
-        if (inHeroRange && heroAttackCooldown <= 0) {
-            int damage = Math.max(1, playerHero.rollAttackDamage() - aiHero.getDefense());
-            if (aiHero.takeDamage(damage)) {
-                onEnemyHeroDefeated();
-                return;
-            }
-            heroAttackCooldown = getHeroAttackCooldownTicks(playerHero);
+        boolean attackerAlive = fromPlayer ? heroAlive : enemyAlive;
+        if (!attackerAlive) {
+            return;
         }
-        if (inEnemyRange && enemyAttackCooldown <= 0) {
-            int damage = Math.max(1, aiHero.rollAttackDamage() - playerHero.getDefense());
-            if (playerHero.takeDamage(damage)) {
-                onPlayerHeroDefeated();
+        double centerX = (fromPlayer ? heroX : enemyX) + HERO_WIDTH / 2.0;
+        double centerY = (fromPlayer ? heroY : enemyY) + HERO_WIDTH / 2.0;
+        int laneIndex = fromPlayer ? heroLaneIndex : enemyLaneIndex;
+        int range = attacker.getAttackRangePixels();
+
+        HeroTarget target = selectHeroTarget(fromPlayer, centerX, centerY, range, laneIndex);
+        if (target == null) {
+            return;
+        }
+
+        if (getAttackCooldown(fromPlayer) > 0) {
+            return;
+        }
+
+        ProjectileType projectileType = determineProjectileType(attacker);
+        if (projectileType != null) {
+            if (hasActiveProjectile(fromPlayer)) {
                 return;
             }
-            enemyAttackCooldown = getHeroAttackCooldownTicks(aiHero);
+            launchProjectile(fromPlayer, projectileType, centerX, centerY, attacker, target);
+            setAttackCooldown(fromPlayer, getHeroAttackCooldownTicks(attacker));
+        } else {
+            applyDirectHeroAttack(fromPlayer, attacker, target);
+            setAttackCooldown(fromPlayer, getHeroAttackCooldownTicks(attacker));
+        }
+    }
+
+    private void applyDirectHeroAttack(boolean fromPlayer, Hero attacker, HeroTarget target) {
+        if (target.isHeroTarget()) {
+            if (fromPlayer) {
+                int damage = Math.max(1, attacker.rollAttackDamage() - aiHero.getDefense());
+                if (aiHero.takeDamage(damage)) {
+                    onEnemyHeroDefeated();
+                }
+            } else {
+                int damage = Math.max(1, attacker.rollAttackDamage() - playerHero.getDefense());
+                if (playerHero.takeDamage(damage)) {
+                    onPlayerHeroDefeated();
+                }
+            }
+            return;
+        }
+
+        UnitInstance unit = target.getUnit();
+        if (unit == null) {
+            return;
+        }
+        unit.takeDamage(Math.max(1, attacker.rollAttackDamage()));
+        if (unit.isDead()) {
+            handleUnitDefeatedByHero(unit, fromPlayer);
+        }
+    }
+
+    private HeroTarget selectHeroTarget(boolean fromPlayer, double centerX, double centerY, int range, int laneIndex) {
+        if (fromPlayer) {
+            if (enemyAlive) {
+                double enemyCenterX = enemyX + HERO_WIDTH / 2.0;
+                double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
+                if (!isSeparatedByLaneWall(centerY, enemyCenterY) && laneIndex == enemyLaneIndex) {
+                    if (distance(centerX, centerY, enemyCenterX, enemyCenterY) <= range) {
+                        return HeroTarget.enemyHero();
+                    }
+                }
+            }
+            UnitInstance unit = findUnitInLaneRange(enemyUnits, centerX, centerY, range, laneIndex);
+            if (unit != null) {
+                return HeroTarget.unit(unit);
+            }
+        } else {
+            if (heroAlive) {
+                double heroCenterX = heroX + HERO_WIDTH / 2.0;
+                double heroCenterY = heroY + HERO_WIDTH / 2.0;
+                if (!isSeparatedByLaneWall(centerY, heroCenterY) && laneIndex == heroLaneIndex) {
+                    if (distance(centerX, centerY, heroCenterX, heroCenterY) <= range) {
+                        return HeroTarget.playerHero();
+                    }
+                }
+            }
+            UnitInstance unit = findUnitInLaneRange(playerUnits, centerX, centerY, range, laneIndex);
+            if (unit != null) {
+                return HeroTarget.unit(unit);
+            }
+        }
+        return null;
+    }
+
+    private boolean isSeparatedByLaneWall(double sourceY, double targetY) {
+        int wallTop = getPlayerClusterBottom();
+        int wallBottom = getEnemyClusterTop();
+        return (sourceY < wallTop && targetY > wallBottom) || (targetY < wallTop && sourceY > wallBottom);
+    }
+
+    private UnitInstance findUnitInLaneRange(java.util.List<UnitInstance> units, double referenceX, double referenceY,
+            int range, int laneIndex) {
+        UnitInstance nearest = null;
+        double bestDistance = Double.MAX_VALUE;
+        for (UnitInstance unit : units) {
+            if (unit.getLaneIndex() != laneIndex) {
+                continue;
+            }
+            double dist = distance(unit.getCenterX(), unit.getCenterY(), referenceX, referenceY);
+            if (dist <= range && dist < bestDistance) {
+                bestDistance = dist;
+                nearest = unit;
+            }
+        }
+        return nearest;
+    }
+
+    private int getAttackCooldown(boolean fromPlayer) {
+        return fromPlayer ? heroAttackCooldown : enemyAttackCooldown;
+    }
+
+    private void setAttackCooldown(boolean fromPlayer, int value) {
+        if (fromPlayer) {
+            heroAttackCooldown = value;
+        } else {
+            enemyAttackCooldown = value;
+        }
+    }
+
+    private ProjectileType determineProjectileType(Hero hero) {
+        if (hero == null || hero.getAttackRangeUnits() <= 3) {
+            return null;
+        }
+        if (hero.getPrimaryAttribute() == Hero.PrimaryAttribute.INTELLIGENCE) {
+            return ProjectileType.MAGIC_BOLT;
+        }
+        return ProjectileType.ARROW;
+    }
+
+    private boolean hasActiveProjectile(boolean fromPlayer) {
+        for (Projectile projectile : projectiles) {
+            if (projectile.isFromPlayer() == fromPlayer) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private void launchProjectile(boolean fromPlayer, ProjectileType type, double centerX, double centerY, Hero attacker,
+            HeroTarget target) {
+        projectiles.add(new Projectile(fromPlayer, type, centerX, centerY, attacker, target));
+    }
+
+    private void handleUnitDefeatedByHero(UnitInstance unit, boolean byPlayerHero) {
+        java.util.List<UnitInstance> sourceList = byPlayerHero ? enemyUnits : playerUnits;
+        if (!sourceList.remove(unit)) {
+            return;
+        }
+        if (byPlayerHero) {
+            playerHero.addGold(UNIT_KILL_REWARD);
+            StringBuilder builder = new StringBuilder(String.format("%s defeated an enemy %s!",
+                    playerHero.getName(), unit.getType().getDisplayName()));
+            int levels = playerHero.gainExperience(EXPERIENCE_PER_UNIT_KILL);
+            if (levels > 0) {
+                builder.append(String.format(" %s reached level %d!", playerHero.getName(), playerHero.getLevel()));
+            }
+            lastActionMessage = builder.toString();
+        } else {
+            int levels = aiHero.gainExperience(EXPERIENCE_PER_UNIT_KILL);
+            if (levels > 0) {
+                lastActionMessage = String.format("Enemy %s grew stronger and reached level %d!", aiHero.getName(),
+                        aiHero.getLevel());
+            }
+        }
+    }
+
+    private void updateProjectiles() {
+        if (projectiles.isEmpty()) {
+            return;
+        }
+        java.util.Iterator<Projectile> iterator = projectiles.iterator();
+        while (iterator.hasNext()) {
+            Projectile projectile = iterator.next();
+            if (projectile.update()) {
+                iterator.remove();
+            }
+        }
+    }
+
+    private void handleProjectileImpact(Projectile projectile) {
+        if (projectile.isHeroTarget()) {
+            if (projectile.isTargetingEnemyHero()) {
+                if (!enemyAlive) {
+                    return;
+                }
+                if (aiHero.takeDamage(projectile.getDamage())) {
+                    onEnemyHeroDefeated();
+                }
+            } else {
+                if (!heroAlive) {
+                    return;
+                }
+                if (playerHero.takeDamage(projectile.getDamage())) {
+                    onPlayerHeroDefeated();
+                }
+            }
+            return;
+        }
+
+        UnitInstance unit = projectile.getTargetUnit();
+        if (unit == null) {
+            return;
+        }
+        unit.takeDamage(projectile.getDamage());
+        if (unit.isDead()) {
+            handleUnitDefeatedByHero(unit, projectile.isFromPlayer());
         }
     }
 
@@ -2010,6 +2210,10 @@ public class HeroLineWarsGame extends JFrame {
                 }
             }
 
+            for (Projectile projectile : projectiles) {
+                drawProjectile(g2, projectile);
+            }
+
             drawQueuedUnitsOverlay(g2, width);
             if (paused) {
                 drawPauseOverlay(g2, width, getHeight());
@@ -2149,6 +2353,24 @@ public class HeroLineWarsGame extends JFrame {
             for (int x = connectorLeftX + 6; x < connectorLeftX + LANE_CONNECTOR_WIDTH - 6; x += 22) {
                 g2.fillRoundRect(x, connectorY + connectorHeight / 2 - 3, 14, 6, 6, 6);
             }
+        }
+
+        private void drawProjectile(Graphics2D g2, Projectile projectile) {
+            ProjectileType type = projectile.getType();
+            int drawX = (int) Math.round(projectile.getX());
+            int drawY = (int) Math.round(projectile.getY());
+            g2.setColor(type.getTrailColor());
+            int trailSize = Math.max(2, type.getHitRadius());
+            g2.fillOval(drawX - trailSize / 2, drawY - trailSize / 2, trailSize, trailSize);
+            g2.setColor(type.getPrimaryColor());
+            double angle = projectile.getAngle();
+            int length = type.getLength();
+            int endX = (int) Math.round(drawX + Math.cos(angle) * length);
+            int endY = (int) Math.round(drawY + Math.sin(angle) * length);
+            g2.setStroke(new BasicStroke(2f));
+            g2.drawLine(drawX, drawY, endX, endY);
+            int headSize = Math.max(4, type.getHitRadius() + 2);
+            g2.fillOval(endX - headSize / 2, endY - headSize / 2, headSize, headSize);
         }
 
         private void drawBase(Graphics2D g2, int baseX, int clusterTop, int clusterHeight, Color color) {
@@ -2442,42 +2664,10 @@ public class HeroLineWarsGame extends JFrame {
         double enemyCenterY = enemyY + HERO_WIDTH / 2.0;
 
         if (heroAlive) {
-            UnitInstance target = findUnitInRange(enemyUnits, heroCenterX, heroCenterY, playerHero.getAttackRangePixels());
-            if (target != null && heroAttackCooldown <= 0) {
-                target.takeDamage(Math.max(1, playerHero.rollAttackDamage()));
-                heroAttackCooldown = getHeroAttackCooldownTicks(playerHero);
-                if (target.isDead()) {
-                    enemyUnits.remove(target);
-                    playerHero.addGold(UNIT_KILL_REWARD);
-                    StringBuilder builder = new StringBuilder(String.format("%s defeated an enemy %s!",
-                            playerHero.getName(), target.getType().getDisplayName()));
-                    int levels = playerHero.gainExperience(EXPERIENCE_PER_UNIT_KILL);
-                    if (levels > 0) {
-                        builder.append(String.format(" %s reached level %d!", playerHero.getName(), playerHero.getLevel()));
-                    }
-                    lastActionMessage = builder.toString();
-                }
-            }
-        }
-
-        if (enemyAlive) {
-            UnitInstance target = findUnitInRange(playerUnits, enemyCenterX, enemyCenterY, aiHero.getAttackRangePixels());
-            if (target != null && enemyAttackCooldown <= 0) {
-                target.takeDamage(Math.max(1, aiHero.rollAttackDamage()));
-                enemyAttackCooldown = getHeroAttackCooldownTicks(aiHero);
-                if (target.isDead()) {
-                    playerUnits.remove(target);
-                    int levels = aiHero.gainExperience(EXPERIENCE_PER_UNIT_KILL);
-                    if (levels > 0) {
-                        lastActionMessage = String.format("Enemy %s grew stronger and reached level %d!", aiHero.getName(),
-                                aiHero.getLevel());
-                    }
-                }
-            }
-        }
-
-        if (heroAlive) {
             for (UnitInstance unit : enemyUnits) {
+                if (unit.getLaneIndex() != heroLaneIndex) {
+                    continue;
+                }
                 if (unit.isInRange(heroCenterX, heroCenterY)) {
                     unit.engage();
                     unit.setTargetCenterY(heroCenterY);
@@ -2492,6 +2682,9 @@ public class HeroLineWarsGame extends JFrame {
 
         if (enemyAlive) {
             for (UnitInstance unit : playerUnits) {
+                if (unit.getLaneIndex() != enemyLaneIndex) {
+                    continue;
+                }
                 if (unit.isInRange(enemyCenterX, enemyCenterY)) {
                     unit.engage();
                     unit.setTargetCenterY(enemyCenterY);
@@ -2505,19 +2698,6 @@ public class HeroLineWarsGame extends JFrame {
 
         enemyUnits.removeIf(UnitInstance::isDead);
         playerUnits.removeIf(UnitInstance::isDead);
-    }
-
-    private UnitInstance findUnitInRange(java.util.List<UnitInstance> units, double referenceX, double referenceY, int range) {
-        UnitInstance nearest = null;
-        double bestDistance = Double.MAX_VALUE;
-        for (UnitInstance unit : units) {
-            double dist = distance(unit.getCenterX(), unit.getCenterY(), referenceX, referenceY);
-            if (dist <= range && dist < bestDistance) {
-                bestDistance = dist;
-                nearest = unit;
-            }
-        }
-        return nearest;
     }
 
     private UnitInstance findNearestUnit(java.util.List<UnitInstance> units, double referenceX, double referenceY) {
@@ -2624,6 +2804,192 @@ public class HeroLineWarsGame extends JFrame {
             if (unit.isDead()) {
                 iterator.remove();
             }
+        }
+    }
+
+    private static final class HeroTarget {
+        private final HeroLineWarsGame.UnitInstance unit;
+        private final boolean heroTarget;
+        private final boolean targetEnemyHero;
+
+        private HeroTarget(HeroLineWarsGame.UnitInstance unit, boolean heroTarget, boolean targetEnemyHero) {
+            this.unit = unit;
+            this.heroTarget = heroTarget;
+            this.targetEnemyHero = targetEnemyHero;
+        }
+
+        static HeroTarget enemyHero() {
+            return new HeroTarget(null, true, true);
+        }
+
+        static HeroTarget playerHero() {
+            return new HeroTarget(null, true, false);
+        }
+
+        static HeroTarget unit(HeroLineWarsGame.UnitInstance unit) {
+            return new HeroTarget(unit, false, false);
+        }
+
+        boolean isHeroTarget() {
+            return heroTarget;
+        }
+
+        boolean isTargetingEnemyHero() {
+            return targetEnemyHero;
+        }
+
+        HeroLineWarsGame.UnitInstance getUnit() {
+            return unit;
+        }
+    }
+
+    private enum ProjectileType {
+        ARROW(12.0, 18, 6, new Color(230, 220, 180), new Color(140, 110, 70)),
+        MAGIC_BOLT(9.5, 14, 8, new Color(140, 200, 255), new Color(70, 140, 220));
+
+        private final double speed;
+        private final int length;
+        private final int hitRadius;
+        private final Color primaryColor;
+        private final Color trailColor;
+
+        ProjectileType(double speed, int length, int hitRadius, Color primaryColor, Color trailColor) {
+            this.speed = speed;
+            this.length = length;
+            this.hitRadius = hitRadius;
+            this.primaryColor = primaryColor;
+            this.trailColor = trailColor;
+        }
+
+        double getSpeed() {
+            return speed;
+        }
+
+        int getLength() {
+            return length;
+        }
+
+        int getHitRadius() {
+            return hitRadius;
+        }
+
+        Color getPrimaryColor() {
+            return primaryColor;
+        }
+
+        Color getTrailColor() {
+            return trailColor;
+        }
+    }
+
+    private class Projectile {
+        private final boolean fromPlayer;
+        private final ProjectileType type;
+        private final HeroTarget target;
+        private final int damage;
+        private double x;
+        private double y;
+        private double angle;
+
+        Projectile(boolean fromPlayer, ProjectileType type, double startX, double startY, Hero attacker, HeroTarget target) {
+            this.fromPlayer = fromPlayer;
+            this.type = type;
+            this.target = target;
+            this.x = startX;
+            this.y = startY;
+            int rolledDamage = Math.max(1, attacker.rollAttackDamage());
+            if (target.isHeroTarget()) {
+                int defense = fromPlayer ? aiHero.getDefense() : playerHero.getDefense();
+                this.damage = Math.max(1, rolledDamage - defense);
+            } else {
+                this.damage = rolledDamage;
+            }
+        }
+
+        boolean update() {
+            if (!isTargetAlive()) {
+                return true;
+            }
+            double targetX = getTargetX();
+            double targetY = getTargetY();
+            double dx = targetX - x;
+            double dy = targetY - y;
+            double distance = Math.hypot(dx, dy);
+            if (distance <= type.getHitRadius()) {
+                handleProjectileImpact(this);
+                return true;
+            }
+            angle = Math.atan2(dy, dx);
+            double step = Math.min(distance, type.getSpeed());
+            x += Math.cos(angle) * step;
+            y += Math.sin(angle) * step;
+            if (Math.hypot(targetX - x, targetY - y) <= type.getHitRadius()) {
+                handleProjectileImpact(this);
+                return true;
+            }
+            return false;
+        }
+
+        boolean isFromPlayer() {
+            return fromPlayer;
+        }
+
+        boolean isHeroTarget() {
+            return target.isHeroTarget();
+        }
+
+        boolean isTargetingEnemyHero() {
+            return target.isTargetingEnemyHero();
+        }
+
+        HeroLineWarsGame.UnitInstance getTargetUnit() {
+            return target.getUnit();
+        }
+
+        int getDamage() {
+            return damage;
+        }
+
+        ProjectileType getType() {
+            return type;
+        }
+
+        double getX() {
+            return x;
+        }
+
+        double getY() {
+            return y;
+        }
+
+        double getAngle() {
+            return angle;
+        }
+
+        private boolean isTargetAlive() {
+            if (isHeroTarget()) {
+                return isTargetingEnemyHero() ? enemyAlive : heroAlive;
+            }
+            HeroLineWarsGame.UnitInstance unit = target.getUnit();
+            return unit != null && !unit.isDead();
+        }
+
+        private double getTargetX() {
+            if (isHeroTarget()) {
+                double baseX = isTargetingEnemyHero() ? enemyX : heroX;
+                return baseX + HERO_WIDTH / 2.0;
+            }
+            HeroLineWarsGame.UnitInstance unit = target.getUnit();
+            return unit != null ? unit.getCenterX() : x;
+        }
+
+        private double getTargetY() {
+            if (isHeroTarget()) {
+                double baseY = isTargetingEnemyHero() ? enemyY : heroY;
+                return baseY + HERO_WIDTH / 2.0;
+            }
+            HeroLineWarsGame.UnitInstance unit = target.getUnit();
+            return unit != null ? unit.getCenterY() : y;
         }
     }
 
