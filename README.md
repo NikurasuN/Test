@@ -14,6 +14,20 @@ This project contains a lightweight real-time interpretation of the classic Hero
 
 This project is a plain Java application without external dependencies.
 
+### Building with Maven
+
+If you use an IDE such as IntelliJ IDEA, import the project as a Maven build
+and it will automatically configure the correct compile and run classpath.
+You can also invoke Maven directly from the command line:
+
+```bash
+# Compile the sources
+mvn clean compile
+
+# Run the Swing client
+mvn exec:java
+```
+
 ```bash
 # Compile all sources
 javac -d out $(find src -name "*.java")
