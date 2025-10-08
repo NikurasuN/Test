@@ -24,29 +24,23 @@ cmake --build build
 ./build/hero_line_wars
 ```
 
-You can now use the cross-platform launcher to build (if necessary) and start the duel
-without opening an IDE or touching CMake:
+You can now use the provided launchers to build (if necessary) and start the duel
+without touching CMake, Python, or an IDE. From the project root run:
 
 ```bash
-python scripts/launch-game.py -- [game arguments]
+./launch-game.sh [game arguments]
 ```
 
-Useful options include `--build-dir` to choose the output folder, `--clean` to force a
-fresh build, `--compiler` to select a specific toolchain, `--skip-build` when you only
-want to run an already compiled executable, and `--build-only` if you merely need the
-binary without launching it straight away.
-
-The launcher is a thin Python script that calls a local C++17 compiler directly, so as
-long as you have either `g++`, `clang++`, or `cl` available on your `PATH` you can jump
-straight into the duel.
-
-On Windows you can run the helper batch script from Command Prompt:
+or on Windows double-click `launch-game.cmd` (or run it from Command Prompt):
 
 ```cmd
-scripts\run-game.cmd
+launch-game.cmd [game arguments]
 ```
 
-The script configures (if needed) and builds the project before starting `hero_line_wars.exe`. To use a different build directory, pass `--build-dir <path>` or set the `BUILD_DIR` environment variable. If you already have a preferred CMake generator, set `CMAKE_GENERATOR` before invoking the script. Otherwise it attempts to pick a sensible default (preferring Ninja when available, and falling back to Visual Studio 2022 when MSBuild is detected) so that you don't need the legacy `nmake` tool on your `PATH`.
+Both scripts locate a native C++17 compiler on your `PATH`, rebuild the game only when
+the sources change, and then start the freshly built `hero_line_wars` executable. If you
+already have a compiled binary in the script's private `.launcher-build` directory the
+launch step is instant.
 
 After building with CMake, a platform-native launcher (`run_game` on macOS/Linux, `run_game.exe` on Windows) is generated in the build output. Double-click it (or run it from the terminal) to locate the appropriate `hero_line_wars` binary in the build tree and start the duel without scripting.
 
