@@ -1,5 +1,7 @@
 #ifndef _WIN32
 
+#include "HeroLineWarsGame.h"
+
 #include <cerrno>
 #include <csignal>
 #include <cstdlib>
@@ -230,6 +232,26 @@ int LaunchGame(const std::filesystem::path &gameExecutable, int argc, char *argv
 
     return EXIT_FAILURE;
 }
+
+int RunEmbeddedGame()
+{
+    try
+    {
+        std::cout << "Launching embedded Hero Line Wars build..." << std::endl;
+        herolinewars::runGame();
+        return EXIT_SUCCESS;
+    }
+    catch (const std::exception &ex)
+    {
+        std::cerr << "Standalone launcher error: " << ex.what() << std::endl;
+    }
+    catch (...)
+    {
+        std::cerr << "An unknown error occurred while running the embedded game." << std::endl;
+    }
+
+    return EXIT_FAILURE;
+}
 }
 
 int main(int argc, char *argv[])
@@ -241,7 +263,9 @@ int main(int argc, char *argv[])
 
         if (gameExecutable.empty())
         {
-            throw std::runtime_error("Unable to locate hero_line_wars. Build the project first using CMake.");
+            std::cerr << "Unable to locate a hero_line_wars binary next to the launcher." << std::endl;
+            std::cerr << "Falling back to the embedded standalone game." << std::endl;
+            return RunEmbeddedGame();
         }
 
         return LaunchGame(gameExecutable, argc, argv);
