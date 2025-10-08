@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_executable(hero_line_wars
+    src/main.cpp
     src/HeroLineWarsGame.cpp
     src/Hero.cpp
     src/IconLibrary.cpp

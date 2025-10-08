@@ -465,10 +465,9 @@ void HeroLineWarsGame::printBanner(const std::string& text) const {
     std::cout << "------------------------------\n";
 }
 
-}  // namespace herolinewars
-
-int main() {
-    herolinewars::HeroLineWarsGame game;
+void runGame() {
+    HeroLineWarsGame game;
     game.run();
-    return 0;
 }
+
+}  // namespace herolinewars
